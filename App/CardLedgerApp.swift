@@ -291,6 +291,8 @@ struct SettingsView: View {
                     Text("Use your private Codex worker. Your Codex credentials are never stored in the app.").font(.caption)
                 }
                 Section("Your data") {
+                    Text("Photos: " + ByteCountFormatter.string(fromByteCount: Int64(store.storageBytes), countStyle: .file))
+                    Text("Build " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") + " (" + (Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "") + ")").font(.caption)
                     Button("Export backup with photos") { perform { share = try store.export() } }
                     Button("Export CSV") { perform { share = try store.csv() } }
                     Button("Import backup") { importing = true }

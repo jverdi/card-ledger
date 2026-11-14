@@ -56,4 +56,32 @@ import XCTest
         crop = CropSelection(); crop.points = crop.points.map { CropPoint(x: $0.x / 100, y: $0.y / 100) }
         XCTAssertFalse(crop.valid)
     }
+    func testPhotosLiveOutsideIndexAndCorruptionIsDetected() async throws {
+        let path = temporary(); let store = CollectionStore(file: path)
+        var card = Card(); card.front = Data([7, 8, 9]); try store.save(card)
+        let index = try JSONDecoder().decode(Archive.self, from: Data(contentsOf: path))
+        XCTAssertNil(index.cards[0].front)
+        let hash = try XCTUnwrap(index.photoHashes?[card.id.uuidString]?["front"])
+        let photo = path.deletingLastPathComponent().appending(path: "Photos/" + hash)
+        try Data([0]).write(to: photo)
+        let reopened = CollectionStore(file: path)
+        XCTAssertNotNil(reopened.error)
+        XCTAssertThrowsError(try reopened.save(Card()))
+    }
+    func testDamagedBackupDoesNotChangeCollection() async throws {
+        let source = CollectionStore(file: temporary()); var card = Card(); card.front = Data([1, 2, 3]); try source.save(card)
+        var backup = try JSONDecoder().decode(Archive.self, from: Data(contentsOf: source.export()))
+        backup.cards[0].front = Data([4, 5, 6])
+        let target = CollectionStore(file: temporary()); let original = Card(); try target.save(original)
+        XCTAssertThrowsError(try target.restore(JSONEncoder().encode(backup)))
+        XCTAssertEqual(target.cards.map(\.id), [original.id])
+    }
+    func testLegacyCollectionMigratesWithoutLosingPhotos() async throws {
+        let path = temporary(); try FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var card = Card(); card.back = Data([10, 11, 12])
+        try JSONEncoder().encode(Archive(cards: [card])).write(to: path)
+        let store = CollectionStore(file: path); try store.save(card)
+        XCTAssertEqual(CollectionStore(file: path).cards.first?.back, card.back)
+        XCTAssertEqual(try JSONDecoder().decode(Archive.self, from: Data(contentsOf: path)).version, 2)
+    }
 }

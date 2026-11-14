@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import SwiftUI
 
 struct Identity: Codable, Equatable {
@@ -82,18 +83,50 @@ struct Card: Codable, Identifiable {
         research = nil
     }
 }
-struct Archive: Codable { var version = 1; var cards: [Card] }
+struct Archive: Codable {
+    var version = 1
+    var cards: [Card]
+    var photoHashes: [String: [String: String]]?
+}
+extension Card {
+    var photoData: [String: Data] {
+        ["front": front, "back": back, "thumbnail": thumbnail, "backCorrected": backCorrected].compactMapValues { $0 }
+    }
+    mutating func setPhoto(_ data: Data?, role: String) {
+        switch role {
+        case "front": front = data
+        case "back": back = data
+        case "thumbnail": thumbnail = data
+        case "backCorrected": backCorrected = data
+        default: break
+        }
+    }
+}
+
 
 @MainActor final class CollectionStore: ObservableObject {
     @Published private(set) var cards: [Card] = []
     @Published var error: String?
     private var loaded = false
     private let file: URL
+    private var assets: URL { file.deletingLastPathComponent().appending(path: "Photos", directoryHint: .isDirectory) }
+    static func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+    static func safeHash(_ value: String) -> Bool { value.count == 64 && value.allSatisfy { "0123456789abcdef".contains($0) } }
+    var storageBytes: Int { cards.reduce(0) { total, card in total + card.photoData.values.reduce(0) { $0 + $1.count } } }
     init(file: URL? = nil) {
         self.file = file ?? URL.applicationSupportDirectory.appending(path: "CardLedger/collection.json")
         do {
             if FileManager.default.fileExists(atPath: self.file.path) {
-                let archive = try JSONDecoder().decode(Archive.self, from: Data(contentsOf: self.file))
+                var archive = try JSONDecoder().decode(Archive.self, from: Data(contentsOf: self.file))
+                if let hashes = archive.photoHashes {
+                    for index in archive.cards.indices {
+                        for (role, hash) in hashes[archive.cards[index].id.uuidString] ?? [:] {
+                            guard Self.safeHash(hash) else { throw CocoaError(.fileReadCorruptFile) }
+                            let bytes = try Data(contentsOf: assets.appending(path: hash))
+                            archive.cards[index].setPhoto(bytes, role: role)
+                        }
+                    }
+                }
                 try Self.validate(archive)
                 cards = archive.cards
             }
@@ -101,16 +134,55 @@ struct Archive: Codable { var version = 1; var cards: [Card] }
         } catch { self.error = "Collection could not be opened. Existing data has been preserved. \(error.localizedDescription)" }
     }
     static func validate(_ archive: Archive) throws {
-        guard archive.version == 1, Set(archive.cards.map(\.id)).count == archive.cards.count else {
+        guard [1, 2].contains(archive.version), archive.cards.count <= 10000, Set(archive.cards.map(\.id)).count == archive.cards.count else {
             throw CocoaError(.fileReadCorruptFile)
         }
+        if archive.version == 2 && archive.photoHashes == nil { throw CocoaError(.fileReadCorruptFile) }
+        let ids = Set(archive.cards.map { $0.id.uuidString })
+        if let hashes = archive.photoHashes, !Set(hashes.keys).isSubset(of: ids) { throw CocoaError(.fileReadCorruptFile) }
+        for card in archive.cards {
+            guard ["Owned", "Sold", "Gifted"].contains(card.status),
+                  [card.manualValue, card.acquisitionCost, card.dispositionProceeds].allSatisfy({ $0 == nil || ($0! >= 0 && !$0!.isNaN) }),
+                  card.frontCrop?.valid != false, card.backCrop?.valid != false else { throw CocoaError(.fileReadCorruptFile) }
+            let photos = card.photoData
+            guard photos.values.allSatisfy({ $0.count <= 50 * 1024 * 1024 }) else { throw CocoaError(.fileReadTooLarge) }
+            if let hashes = archive.photoHashes {
+                let expected = hashes[card.id.uuidString] ?? [:]
+                guard Set(expected.keys) == Set(photos.keys) else { throw CocoaError(.fileReadCorruptFile) }
+                for (role, bytes) in photos {
+                    guard let hash = expected[role], safeHash(hash), hash == digest(bytes) else { throw CocoaError(.fileReadCorruptFile) }
+                }
+            }
+        }
+    }
+    private func archive(_ cards: [Card]) -> Archive {
+        let hashes = Dictionary(uniqueKeysWithValues: cards.map { card in
+            (card.id.uuidString, card.photoData.mapValues(Self.digest))
+        })
+        return Archive(version: 2, cards: cards, photoHashes: hashes)
     }
     private func commit(_ next: [Card]) throws {
         guard loaded else { throw CocoaError(.fileReadCorruptFile) }
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let bytes = try JSONEncoder().encode(Archive(cards: next))
+        var index = archive(next)
+        try Self.validate(index)
+        try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
+        for position in index.cards.indices {
+            for (role, data) in index.cards[position].photoData {
+                let hash = index.photoHashes![index.cards[position].id.uuidString]![role]!
+                let target = assets.appending(path: hash)
+                if !FileManager.default.fileExists(atPath: target.path) { try data.write(to: target, options: [.atomic, .completeFileProtection]) }
+                index.cards[position].setPhoto(nil, role: role)
+            }
+        }
+        // Photos are committed first. An interrupted index write leaves the previous index and its photos intact.
+        let bytes = try JSONEncoder().encode(index)
         try bytes.write(to: file, options: [.atomic, .completeFileProtection])
         cards = next
+        let referenced = Set(index.photoHashes!.values.flatMap { $0.values })
+        if let files = try? FileManager.default.contentsOfDirectory(at: assets, includingPropertiesForKeys: nil) {
+            for url in files where Self.safeHash(url.lastPathComponent) && !referenced.contains(url.lastPathComponent) { try? FileManager.default.removeItem(at: url) }
+        }
     }
     func save(_ card: Card) throws {
         var next = cards
@@ -121,10 +193,11 @@ struct Archive: Codable { var version = 1; var cards: [Card] }
     func delete(_ id: UUID) throws { try commit(cards.filter { $0.id != id }) }
     func export() throws -> URL {
         let url = URL.temporaryDirectory.appending(path: "CardLedger-backup.json")
-        try JSONEncoder().encode(Archive(cards: cards)).write(to: url, options: .atomic)
+        try JSONEncoder().encode(archive(cards)).write(to: url, options: [.atomic, .completeFileProtection])
         return url
     }
     func restore(_ data: Data) throws {
+        guard data.count <= 512 * 1024 * 1024 else { throw CocoaError(.fileReadTooLarge) }
         let archive = try JSONDecoder().decode(Archive.self, from: data)
         try Self.validate(archive)
         // Merge only new UUIDs. An imported backup cannot overwrite newer local edits.

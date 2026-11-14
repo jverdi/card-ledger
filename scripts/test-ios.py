@@ -15,7 +15,14 @@ device = next(d for runtime, items in devices['devices'].items()
 try:
     if device['state'] != 'Booted':
         run(['xcrun', 'simctl', 'boot', device['udid']], 60)
-    run(['xcrun', 'simctl', 'bootstatus', device['udid'], '-b'], 240)
+    try:
+        run(['xcrun', 'simctl', 'bootstatus', device['udid'], '-b'], 240)
+    except subprocess.TimeoutExpired:
+        # A fresh GitHub runner occasionally stalls during first simulator boot.
+        # Retry startup once; test failures are never retried or hidden.
+        run(['xcrun', 'simctl', 'shutdown', device['udid']], 60)
+        run(['xcrun', 'simctl', 'boot', device['udid']], 60)
+        run(['xcrun', 'simctl', 'bootstatus', device['udid'], '-b'], 180)
     run(['xcodebuild', 'test', '-project', 'CardLedger.xcodeproj', '-scheme', 'CardLedger',
          '-destination', 'platform=iOS Simulator,id=' + device['udid'],
          '-parallel-testing-enabled', 'NO', '-test-timeouts-enabled', 'YES',
