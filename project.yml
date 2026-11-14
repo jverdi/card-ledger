@@ -18,6 +18,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.jverdi.cardledger
         GENERATE_INFOPLIST_FILE: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_CFBundleDisplayName: Card Ledger
         INFOPLIST_KEY_NSCameraUsageDescription: Photograph your cards to build your private collection.
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
