@@ -107,6 +107,7 @@ struct CollectionView: View {
         if ProcessInfo.processInfo.environment["CARD_LEDGER_SCAN_FIXTURE"] == "1" {
             services.identify = { _ in Identity(player:"UI Rookie",team:"Brooklyn",year:"2026",manufacturer:"Test Brand",set:"Test Set",number:"1",variant:"Base",grade:"Raw") }
             services.canLookup = false
+            services.minimumReveal = 6 // Give UI automation time to inspect the animated reveal.
         }
         #endif
         withAnimation(.easeInOut(duration:0.25)) { scan = ScanFlowModel(services:services) }

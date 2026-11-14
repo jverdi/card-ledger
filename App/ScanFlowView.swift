@@ -147,7 +147,7 @@ struct ScanFlowView: View {
                 CardCollectionRow(card:model.card,namespace:namespace).padding(18).background(.white.opacity(0.09),in:RoundedRectangle(cornerRadius:22)).padding(.horizontal,20)
             } else {
                 HolographicCard(front:model.card.thumbnail ?? model.card.front,back:model.card.backCorrected ?? model.card.back)
-                    .frame(width:230,height:322).matchedGeometryEffect(id:"photo-"+model.id.uuidString,in:namespace)
+                    .frame(width:230,height:322).accessibilityIdentifier("scan.cardReveal").matchedGeometryEffect(id:"photo-"+model.id.uuidString,in:namespace)
                 VStack(spacing:8) {
                     Text(model.player).font(.system(size:32,weight:.bold,design:.rounded)).multilineTextAlignment(.center)
                     Text(model.team).font(.title3).foregroundStyle(.cyan)
@@ -173,7 +173,7 @@ struct ScanFlowView: View {
         if ProcessInfo.processInfo.environment["CARD_LEDGER_SCAN_FIXTURE"] == "1" {
             Task {
                 for name in ["FRONT","BACK"] {
-                    try? await Task.sleep(for:.seconds(1))
+                    try? await Task.sleep(for:.seconds(6))
                     if let face = try? await Imaging.detectCard(ScanFixture.image(label:name)) { model.receive(face) }
                 }
             }

@@ -10,8 +10,9 @@ import XCTest
         app.buttons["collection.add"].tap()
         XCTAssertTrue(app.staticTexts["Scan front of card"].waitForExistence(timeout:5))
         XCTAssertFalse(app.textFields["card.player"].exists)
-        XCTAssertTrue(app.staticTexts["Scan back of card"].waitForExistence(timeout:8))
+        XCTAssertTrue(app.staticTexts["Scan back of card"].waitForExistence(timeout:15))
         XCTAssertTrue(app.staticTexts["UI Rookie"].waitForExistence(timeout:20))
+        XCTAssertTrue(app.otherElements["scan.cardReveal"].exists || app.images["scan.cardReveal"].exists || app.descendants(matching:.any)["scan.cardReveal"].exists)
         let reveal = XCTAttachment(screenshot:app.screenshot()); reveal.name = "Two-sided holographic reveal"; reveal.lifetime = .keepAlways; add(reveal)
         let row = app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","card.row.")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout:30))
