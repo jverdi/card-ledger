@@ -18,7 +18,12 @@ import XCTest
         XCTAssertTrue(app.staticTexts["Scan back of card"].waitForExistence(timeout:10))
         XCTAssertTrue(app.staticTexts["Front captured"].exists)
         let backGuide = XCTAttachment(screenshot:app.screenshot()); backGuide.name = "Back scan with persistent front confirmation"; backGuide.lifetime = .keepAlways; add(backGuide)
-        XCTAssertTrue(app.staticTexts["UI Rookie"].waitForExistence(timeout:20))
+        // Cold simulator OCR can take over 20 seconds for both faces and four orientations.
+        // Stop here on failure; async XCTest otherwise continues issuing invalid UI actions.
+        guard app.staticTexts["UI Rookie"].waitForExistence(timeout:45) else {
+            XCTFail("Both card faces did not finish recognition")
+            return
+        }
         XCTAssertTrue(app.otherElements["scan.cardReveal"].exists || app.images["scan.cardReveal"].exists || app.descendants(matching:.any)["scan.cardReveal"].exists)
         XCTAssertTrue(app.buttons["scan.continue"].waitForExistence(timeout:15))
         let reveal = XCTAttachment(screenshot:app.screenshot()); reveal.name = "Two-sided holographic reveal"; reveal.lifetime = .keepAlways; add(reveal)
