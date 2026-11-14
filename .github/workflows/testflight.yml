@@ -1,0 +1,75 @@
+name: TestFlight
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-15
+    timeout-minutes: 60
+    environment: testflight
+    env:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      PROFILE_NAME: ${{ secrets.PROFILE_NAME }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+      BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+      BUILD_CERTIFICATE_PASSWORD: ${{ secrets.BUILD_CERTIFICATE_PASSWORD }}
+      BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+      BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate release configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in APPLE_TEAM_ID PROFILE_NAME ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8_BASE64 BUILD_CERTIFICATE_BASE64 BUILD_PROVISION_PROFILE_BASE64; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing release secret $name"
+              exit 1
+            fi
+          done
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify pricing rules
+        run: |
+          pip install -r worker/requirements.txt
+          python -m unittest discover -s tests -v
+      - name: Select Xcode and generate project
+        run: |
+          set -euo pipefail
+          sudo xcode-select -s /Applications/Xcode_26.0.app
+          brew install xcodegen
+          xcodegen generate
+          bundle install
+      - name: Verify native app
+        run: |
+          set -euo pipefail
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for k,v in d["devices"].items() if "iOS-26-0" in k for x in v if "iPhone" in x["name"]))')
+          xcodebuild test -project CardLedger.xcodeproj -scheme CardLedger -destination "platform=iOS Simulator,id=$DEVICE" CODE_SIGNING_ALLOWED=NO -resultBundlePath TestResults.xcresult
+      - name: Install temporary signing assets
+        shell: bash
+        run: bash scripts/install-signing.sh
+      - name: Upload and wait for Apple processing
+        run: bundle exec fastlane ios beta
+      - name: Remove temporary signing assets
+        if: always()
+        shell: bash
+        run: |
+          security delete-keychain "$RUNNER_TEMP/cardledger-signing.keychain-db" || true
+          rm -f "$RUNNER_TEMP/distribution.p12" "$RUNNER_TEMP/profile.mobileprovision" "$RUNNER_TEMP/profile.plist"
+          if [ -n "${CARD_PROFILE_UUID:-}" ]; then
+            rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/$CARD_PROFILE_UUID.mobileprovision"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-test-results
+          path: TestResults.xcresult
+          retention-days: 7

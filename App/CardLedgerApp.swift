@@ -85,32 +85,61 @@ struct CardEditor: View {
     @State private var busy = false
     @State private var message: String?
     @State private var deleting = false
-    var body: some View {
-        NavigationStack {
-            Form {
-                photosSection
-                identitySection
-                collectionSection
-                researchSection
-                deleteSection
-            }.disabled(busy).overlay { if busy { ProgressView("Working…").padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14)) } }
-                .navigationTitle("Card details").navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(busy) }
-                    ToolbarItem(placement: .confirmationAction) { Button("Save") { do { try store.save(card); dismiss() } catch { message = error.localizedDescription } }.disabled(busy) }
-                }
-                .onChange(of: photo) { _, value in
-                    let selectedSide = side
-                    run { if let data = try await value?.loadTransferable(type: Data.self) { try await ingest(data, side: selectedSide) } }
-                }
-                .onChange(of: card.status) { _, value in card.dispositionDate = value == "Owned" ? nil : Date() }
-                .onChange(of: card.identity.details) { _, _ in
-                    card.identity.confirmed = false
-                    card.research = nil
-                }
-                .sheet(isPresented: $camera) { Camera { data in let selectedSide = side; run { try await ingest(data, side: selectedSide) } } }
-                .alert("Card Ledger", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) { Button("OK") { message = nil } } message: { Text(message ?? "") }
-                .confirmationDialog("Permanently delete this card and its photos?", isPresented: $deleting, titleVisibility: .visible) { Button("Delete", role: .destructive) { do { try store.delete(card.id); dismiss() } catch { message = error.localizedDescription } } }
+    var body: some View { NavigationStack { feedbackContent } }
+    private var editorForm: some View {
+        Form {
+            photosSection
+            identitySection
+            collectionSection
+            researchSection
+            deleteSection
+        }
+        .disabled(busy)
+        .overlay { if busy { ProgressView("Working…").padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14)) } }
+    }
+    private var navigationContent: some View {
+        editorForm
+            .navigationTitle("Card details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(busy) }
+                ToolbarItem(placement: .confirmationAction) { Button("Save", action: saveCard).disabled(busy) }
+            }
+    }
+    private var mediaContent: some View {
+        navigationContent
+            .onChange(of: photo) { _, value in importPhoto(value) }
+            .onChange(of: card.status) { _, value in card.dispositionDate = value == "Owned" ? nil : Date() }
+            .onChange(of: card.identity.details) { _, _ in
+                card.identity.confirmed = false
+                card.research = nil
+            }
+            .sheet(isPresented: $camera) { Camera(onPhoto: capturedPhoto) }
+    }
+    private var feedbackContent: some View {
+        mediaContent
+            .alert("Card Ledger", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
+                Button("OK") { message = nil }
+            } message: { Text(message ?? "") }
+            .confirmationDialog("Permanently delete this card and its photos?", isPresented: $deleting, titleVisibility: .visible) {
+                Button("Delete", role: .destructive, action: deleteCard)
+            }
+    }
+    private func saveCard() {
+        do { try store.save(card); dismiss() } catch { message = error.localizedDescription }
+    }
+    private func deleteCard() {
+        do { try store.delete(card.id); dismiss() } catch { message = error.localizedDescription }
+    }
+    private func capturedPhoto(_ data: Data) {
+        let selectedSide = side
+        run { try await ingest(data, side: selectedSide) }
+    }
+    private func importPhoto(_ item: PhotosPickerItem?) {
+        let selectedSide = side
+        run {
+            guard let item, let data = try await item.loadTransferable(type: Data.self) else { return }
+            try await ingest(data, side: selectedSide)
         }
     }
     private var photosSection: some View {
