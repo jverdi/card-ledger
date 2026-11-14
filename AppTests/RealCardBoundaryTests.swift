@@ -17,7 +17,20 @@ final class RealCardBoundaryTests: XCTestCase {
             let data = try Data(contentsOf:url)
             let image = try XCTUnwrap(UIImage(data:data))
             let cg = try XCTUnwrap(Imaging.rotated(image,quarterTurns:0).cgImage)
-            guard let face = try? await Imaging.detectCard(data) else { XCTFail("Missing full card: \(name)"); continue }
+            let handler = VNImageRequestHandler(cgImage:cg)
+            let foreground = VNGenerateForegroundInstanceMaskRequest()
+            try handler.perform([foreground])
+            for observation in foreground.results ?? [] {
+                for instance in observation.allInstances {
+                    let mask = try observation.generateScaledMaskForImage(forInstances:IndexSet(integer:instance),from:handler)
+                    let ci = CIImage(cvPixelBuffer:mask)
+                    let rendered = try XCTUnwrap(CIContext().createCGImage(ci,from:ci.extent,format:.RGBA8,colorSpace:CGColorSpaceCreateDeviceRGB()))
+                    let attachment = XCTAttachment(image:UIImage(cgImage:rendered)); attachment.name = "\(name) foreground \(instance)"; attachment.lifetime = .keepAlways; add(attachment)
+                }
+            }
+            let face: CapturedFace
+            do { face = try await Imaging.detectCard(data) }
+            catch { XCTFail("Missing full card: \(name): \(error)"); continue }
             for (actual,expected) in zip(face.crop.points,corners) {
                 XCTAssertEqual(actual.x,Double(expected.x)/1152,accuracy:0.018,"\(name) physical corner x")
                 XCTAssertEqual(actual.y,Double(expected.y)/1536,accuracy:0.018,"\(name) physical corner y")

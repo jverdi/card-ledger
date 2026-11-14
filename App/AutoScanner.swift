@@ -53,9 +53,11 @@ enum CardBoundaryDetector {
                 silhouettes += rectangles(outline.results ?? [],size:size)
                 let contours = VNDetectContoursRequest()
                 contours.detectsDarkOnLight = false; contours.maximumImageDimension = 512
-                try VNImageRequestHandler(cvPixelBuffer:mask).perform([contours])
+                let maskImage = CIImage(cvPixelBuffer:mask)
+                guard let maskCG = CIContext().createCGImage(maskImage,from:maskImage.extent,format:.RGBA8,colorSpace:CGColorSpaceCreateDeviceRGB()) else { continue }
+                try VNImageRequestHandler(cgImage:maskCG).perform([contours])
                 for contour in contours.results?.first?.topLevelContours ?? [] {
-                    let polygon = try contour.polygonApproximation(epsilon:0.015)
+                    guard let polygon = try? contour.polygonApproximation(epsilon:0.015) else { continue }
                     guard polygon.pointCount == 4 else { continue }
                     let points = polygon.normalizedPoints.map { CGPoint(x:Double($0.x),y:1-Double($0.y)) }
                     let center = CGPoint(x:points.map(\.x).reduce(0,+)/4,y:points.map(\.y).reduce(0,+)/4)
