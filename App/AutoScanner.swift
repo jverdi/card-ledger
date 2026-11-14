@@ -236,6 +236,7 @@ final class AutoScanCamera: NSObject, ObservableObject, AVCaptureVideoDataOutput
         guard enabled, now-lastFrame >= 0.10, let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         lastFrame = now
         do {
+            let size = CGSize(width:CVPixelBufferGetWidth(buffer),height:CVPixelBufferGetHeight(buffer))
             let rectangle = try CardBoundaryDetector.detect(in:CIImage(cvPixelBuffer:buffer))
             if let rectangle {
                 let point = Self.deviceFocusPoint(portraitPoint:rectangle.center)
