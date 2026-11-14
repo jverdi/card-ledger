@@ -2,7 +2,7 @@ import XCTest
 @testable import CardLedger
 @MainActor final class StoreTests: XCTestCase {
     func temporary() -> URL { URL.temporaryDirectory.appending(path: UUID().uuidString + "/collection.json") }
-    func testRoundTripPhotosAndStatus() throws {
+    func testRoundTripPhotosAndStatus() async throws {
         let path = temporary(); let store = CollectionStore(file: path)
         var card = Card(); card.identity.player = "Test"; card.front = Data([1,2,3]); card.status = "Sold"
         try store.save(card)
@@ -10,24 +10,24 @@ import XCTest
         XCTAssertEqual(reopened.cards.first?.front, card.front)
         XCTAssertEqual(reopened.cards.first?.status, "Sold")
     }
-    func testImportDoesNotOverwriteExistingCopy() throws {
+    func testImportDoesNotOverwriteExistingCopy() async throws {
         let store = CollectionStore(file: temporary()); var card = Card(); card.notes = "newer"
         try store.save(card); card.notes = "older"
         try store.restore(JSONEncoder().encode(Archive(cards: [card])))
         XCTAssertEqual(store.cards.count,1); XCTAssertEqual(store.cards[0].notes,"newer")
     }
-    func testCorruptStoreIsNeverOverwritten() throws {
+    func testCorruptStoreIsNeverOverwritten() async throws {
         let path = temporary(); try FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
         let bytes = Data("invalid".utf8); try bytes.write(to: path)
         let store = CollectionStore(file: path)
         XCTAssertThrowsError(try store.save(Card()))
         XCTAssertEqual(try Data(contentsOf: path),bytes)
     }
-    func testRejectDuplicateUUIDs() throws {
+    func testRejectDuplicateUUIDs() async throws {
         let card = Card()
         XCTAssertThrowsError(try CollectionStore.validate(Archive(cards:[card,card])))
     }
-    func testRetakingPhotoReplacesOnlyThatSidesText() {
+    func testRetakingPhotoReplacesOnlyThatSidesText() async {
         var card = Card()
         card.replaceOCR("Old front", front: true)
         card.replaceOCR("Back label", front: false)
