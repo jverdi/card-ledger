@@ -25,7 +25,7 @@ struct CollectionView: View {
     @State private var grading = "All grades"
     @State private var tag = ""
     @State private var availability = "All values"
-    @State private var editing: Card?
+    @State private var viewing: Card?
     @State private var settings = false
     @State private var scan: ScanFlowModel?
     @Namespace private var scanFlight
@@ -83,7 +83,7 @@ struct CollectionView: View {
                 }
                 if visible.isEmpty { ContentUnavailableView("Your collection starts here", systemImage: "rectangle.stack", description: Text("Tap + to photograph or add a card.")) }
                 ForEach(visible) { card in
-                    Button { editing = card } label: {
+                    Button { viewing = card } label: {
                         CardCollectionRow(card:card,namespace:scanFlight)
                     }.foregroundStyle(.primary).id(card.id).accessibilityIdentifier("card.row." + card.id.uuidString)
                 }
@@ -93,7 +93,7 @@ struct CollectionView: View {
                     ToolbarItem(placement: .topBarTrailing) { Button("Add card", systemImage: "plus", action:startScan).accessibilityIdentifier("collection.add") }
                 }
                 .onChange(of: inserted) { _,id in if let id { withAnimation(.spring(response:0.65,dampingFraction:0.88)) { proxy.scrollTo(id,anchor:.center) } } }
-                .sheet(item: $editing) { card in CardEditor(card: card) }
+                .fullScreenCover(item: $viewing) { card in CardDetailView(cardID:card.id) }
                 .sheet(isPresented: $settings) { SettingsView() }
                 .alert("Collection error", isPresented: Binding(get: { store.error != nil }, set: { if !$0 { store.error = nil } })) { Button("OK") { store.error = nil } } message: { Text(store.error ?? "") }
             }
@@ -138,7 +138,6 @@ struct CardEditor: View {
     @State private var camera = false
     @State private var busy = false
     @State private var message: String?
-    @State private var deleting = false
     @State private var work: Task<Void, Never>?
     @State private var cropping = false
     var body: some View { NavigationStack { feedbackContent } }
@@ -149,7 +148,6 @@ struct CardEditor: View {
             collectionSection
             manualValueSection
             researchSection
-            deleteSection
         }
         .disabled(busy)
         .overlay { if busy { VStack(spacing: 12) { ProgressView("Working…"); Button("Cancel operation") { work?.cancel() } }.padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14)) } }
@@ -180,15 +178,9 @@ struct CardEditor: View {
             .alert("Card Ledger", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
                 Button("OK") { message = nil }
             } message: { Text(message ?? "") }
-            .confirmationDialog("Permanently delete this card and its photos?", isPresented: $deleting, titleVisibility: .visible) {
-                Button("Delete", role: .destructive, action: deleteCard)
-            }
     }
     private func saveCard() {
         do { try store.save(card); dismiss() } catch { message = error.localizedDescription }
-    }
-    private func deleteCard() {
-        do { try store.delete(card.id); dismiss() } catch { message = error.localizedDescription }
     }
     private func capturedPhoto(_ data: Data) {
         let selectedSide = side
@@ -316,9 +308,6 @@ struct CardEditor: View {
                         }
                     }
                 }
-    }
-    private var deleteSection: some View {
-                Section { Button("Delete card permanently", role: .destructive) { deleting = true } }
     }
     func run(_ action: @escaping @MainActor () async throws -> Void) {
         guard !busy else { return }; busy = true
