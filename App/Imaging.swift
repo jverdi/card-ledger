@@ -26,14 +26,11 @@ enum Imaging {
             guard let source = UIImage(data: data) else { throw CocoaError(.fileReadCorruptFile) }
             let image = rotated(source, quarterTurns: 0)
             guard let cg = image.cgImage else { throw CocoaError(.fileReadCorruptFile) }
-            let request = VNDetectRectanglesRequest(); request.maximumObservations = 4
-            request.minimumConfidence = 0.8; request.minimumAspectRatio = 0.45; request.maximumAspectRatio = 0.95; request.minimumSize = 0.2
+            let request = CardBoundaryDetector.request()
             try VNImageRequestHandler(cgImage: cg).perform([request])
             let size = CGSize(width: cg.width, height: cg.height)
-            let rectangles = (request.results ?? []).map { r in
-                CardRectangle(points: [r.topLeft,r.topRight,r.bottomRight,r.bottomLeft].map { CGPoint(x: $0.x,y: 1-$0.y) }, confidence: r.confidence, pixelSize: size)
-            }
-            guard let rectangle = rectangles.first(where: { $0.likelyCard }) else { throw ScanFailure.noRectangle }
+            let rectangles = CardBoundaryDetector.rectangles(request.results ?? [],size:size)
+            guard let rectangle = CardBoundaryDetector.outermost(rectangles) else { throw ScanFailure.noRectangle }
             return CapturedFace(original: data, crop: rectangle.crop, preview: try cropJPEG(cg,crop:rectangle.crop))
         }
         return try await withTaskCancellationHandler {
@@ -60,8 +57,7 @@ enum Imaging {
             let scale = min(1, 2400 / max(size.width, size.height))
             let normalized = UIGraphicsImageRenderer(size: CGSize(width: size.width * scale, height: size.height * scale), format: format).image { _ in image.draw(in: CGRect(origin: .zero, size: CGSize(width: size.width * scale, height: size.height * scale))) }
             guard let cg = normalized.cgImage else { throw CocoaError(.fileReadCorruptFile) }
-            let rectangles = VNDetectRectanglesRequest()
-            rectangles.maximumObservations = 1; rectangles.minimumConfidence = 0.7
+            let rectangles = CardBoundaryDetector.request()
             let handler = VNImageRequestHandler(cgImage: cg)
             if crop == nil { try handler.perform([rectangles]) }
             var corrected = CIImage(cgImage: cg)
@@ -72,10 +68,13 @@ enum Imaging {
                     return CIVector(x: p.x * corrected.extent.width, y: (1 - p.y) * corrected.extent.height)
                 }
                 corrected = corrected.applyingFilter("CIPerspectiveCorrection", parameters: ["inputTopLeft": point(0), "inputTopRight": point(1), "inputBottomRight": point(2), "inputBottomLeft": point(3)])
-            } else if let r = rectangles.results?.first {
-                resolvedCrop = CropSelection(points:[r.topLeft,r.topRight,r.bottomRight,r.bottomLeft].map { CropPoint(x:Double($0.x),y:1.0-Double($0.y)) })
-                func point(_ p: CGPoint) -> CIVector { CIVector(x: p.x * corrected.extent.width, y: p.y * corrected.extent.height) }
-                corrected = corrected.applyingFilter("CIPerspectiveCorrection", parameters: ["inputTopLeft": point(r.topLeft), "inputTopRight": point(r.topRight), "inputBottomLeft": point(r.bottomLeft), "inputBottomRight": point(r.bottomRight)])
+            } else if let rectangle = CardBoundaryDetector.outermost(CardBoundaryDetector.rectangles(rectangles.results ?? [],size:CGSize(width:cg.width,height:cg.height))) {
+                resolvedCrop = rectangle.crop
+                func point(_ index: Int) -> CIVector {
+                    let p = resolvedCrop.points[index]
+                    return CIVector(x:p.x*corrected.extent.width,y:(1-p.y)*corrected.extent.height)
+                }
+                corrected = corrected.applyingFilter("CIPerspectiveCorrection",parameters:["inputTopLeft":point(0),"inputTopRight":point(1),"inputBottomRight":point(2),"inputBottomLeft":point(3)])
             }
             let context = CIContext()
             guard let output = context.createCGImage(corrected, from: corrected.extent) else { throw CocoaError(.fileWriteUnknown) }

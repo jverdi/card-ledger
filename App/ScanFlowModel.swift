@@ -18,6 +18,7 @@ struct ScanServices {
     var spinnerDelay: Double = 3
     var minimumReveal: Double = 2
     var collapseDuration: Double = 0.65
+    var confirmationDuration: Double = 2.0
     static func live(workerURL: String) -> Self {
         Self(process: { try await Imaging.process($0.original, crop: $0.crop, automaticallyOrient:true) },
              identify: { try await Recognizer.identify(text: $0) },
@@ -27,7 +28,7 @@ struct ScanServices {
 }
 
 @MainActor final class ScanFlowModel: ObservableObject, Identifiable {
-    enum Stage: Equatable { case front, back, identifying, revealing, compact, ready }
+    enum Stage: Equatable { case front, frontCaptured, back, identifying, revealing, compact, ready }
     let id: UUID
     @Published private(set) var card: Card
     @Published private(set) var stage: Stage = .front
@@ -41,8 +42,10 @@ struct ScanServices {
     private var back: CapturedFace?
     private var task: Task<Void, Never>?
     private var spinner: Task<Void, Never>?
+    private var confirmation: Task<Void, Never>?
     let services: ScanServices
     var scanning: Bool { stage == .front || stage == .back }
+    var capturing: Bool { scanning || stage == .frontCaptured }
     var player: String { card.identity.player.isEmpty ? "Card captured" : card.identity.player }
     var team: String { card.identity.team.isEmpty ? "Ready for your collection" : card.identity.team }
 
@@ -52,7 +55,15 @@ struct ScanServices {
         captureError = nil
         if stage == .front {
             front = face; card.front = face.original; card.frontCrop = face.crop; card.thumbnail = face.preview
-            withAnimation(.easeInOut(duration: 0.3)) { stage = .back }
+            withAnimation(.easeInOut(duration: 0.25)) { stage = .frontCaptured }
+            confirmation = Task {
+                do {
+                    try await pause(services.confirmationDuration)
+                    try Task.checkCancellation()
+                    guard !cancelled, stage == .frontCaptured else { return }
+                    withAnimation(.easeInOut(duration:0.25)) { stage = .back }
+                } catch { }
+            }
         } else {
             back = face; card.back = face.original; card.backCrop = face.crop; card.backCorrected = face.preview
             stage = .identifying
@@ -131,7 +142,7 @@ struct ScanServices {
             stage = .ready
         } catch { }
     }
-    func cancel() { cancelled = true; task?.cancel(); spinner?.cancel(); pricePending = false; showPriceSpinner = false }
+    func cancel() { cancelled = true; task?.cancel(); spinner?.cancel(); confirmation?.cancel(); pricePending = false; showPriceSpinner = false }
 }
 
 extension Identity {

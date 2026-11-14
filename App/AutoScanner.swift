@@ -8,21 +8,27 @@ struct CardRectangle: Equatable {
     var confidence: Float
     var pixelSize: CGSize
     var crop: CropSelection { CropSelection(points: points.map { CropPoint(x: $0.x, y: $0.y) }) }
-    var likelyCard: Bool {
-        guard points.count == 4, confidence >= 0.8, crop.valid,
-              points.allSatisfy({ $0.x > 0.025 && $0.x < 0.975 && $0.y > 0.025 && $0.y < 0.975 }) else { return false }
+    var area: CGFloat {
+        guard points.count == 4 else { return 0 }
+        return abs((0..<4).reduce(CGFloat.zero) { sum, i in
+            let a = points[i], b = points[(i+1)%4]
+            return sum + a.x*b.y - b.x*a.y
+        }) / 2
+    }
+    var center: CGPoint {
+        CGPoint(x:points.map(\.x).reduce(0,+)/4,y:points.map(\.y).reduce(0,+)/4)
+    }
+    var cardProportions: Bool {
+        guard points.count == 4, confidence >= 0.7, crop.valid,
+              pixelSize.width > 0, pixelSize.height > 0 else { return false }
         func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat { hypot((a.x-b.x)*pixelSize.width, (a.y-b.y)*pixelSize.height) }
         let width = (distance(points[0], points[1]) + distance(points[3], points[2])) / 2
         let height = (distance(points[0], points[3]) + distance(points[1], points[2])) / 2
-        let aspect = min(width,height) / max(width,height)
-        var twiceArea: CGFloat = 0
-        for index in 0..<4 {
-            let a = points[index]
-            let b = points[(index + 1) % 4]
-            twiceArea += a.x * b.y - b.x * a.y
-        }
-        let area = abs(twiceArea) / 2
-        return (0.55...0.84).contains(aspect) && (0.12...0.88).contains(area)
+        return (0.55...0.84).contains(min(width,height) / max(width,height)) && area >= 0.12
+    }
+    var likelyCard: Bool {
+        cardProportions && area <= 0.88 &&
+        points.allSatisfy { $0.x > 0.025 && $0.x < 0.975 && $0.y > 0.025 && $0.y < 0.975 }
     }
     func movement(from other: CardRectangle) -> CGFloat {
         guard other.points.count == points.count else { return 1 }
@@ -30,32 +36,61 @@ struct CardRectangle: Equatable {
     }
 }
 
-// Frame timestamps, not callback count, define the hold. A latch prevents repeated captures.
+// Use the same selection for the camera, imports and recovered legacy crops.
+// Vision's result order is not a size ranking. Ask for all observations so a
+// statistics table cannot consume the limit before the actual card is returned.
+enum CardBoundaryDetector {
+    static func request() -> VNDetectRectanglesRequest {
+        let request = VNDetectRectanglesRequest()
+        request.maximumObservations = 0; request.minimumConfidence = 0.7
+        request.minimumAspectRatio = 0.45; request.maximumAspectRatio = 0.95
+        request.minimumSize = 0.2; request.quadratureTolerance = 25
+        return request
+    }
+    static func rectangles(_ observations: [VNRectangleObservation], size: CGSize) -> [CardRectangle] {
+        observations.map { r in
+            CardRectangle(points:[r.topLeft,r.topRight,r.bottomRight,r.bottomLeft].map {
+                CGPoint(x:Double($0.x),y:1.0-Double($0.y))
+            },confidence:r.confidence,pixelSize:size)
+        }
+    }
+    static func outermost(_ rectangles: [CardRectangle]) -> CardRectangle? {
+        // Reject a clipped outer card instead of silently capturing its inner border.
+        guard let outer = rectangles.filter(\.cardProportions).max(by:{ $0.area < $1.area }),
+              outer.likelyCard else { return nil }
+        return outer
+    }
+}
+
+// Frame timestamps, not callback count, define the hold. A latch prevents repeats.
 struct CaptureGate {
     private var anchor: CardRectangle?
     private var since: TimeInterval?
     private var frames = 0
     private var latched = false
-    private var requiresDeparture = false
+    private(set) var requiresDeparture = false
+    private(set) var progress = 0.0
     private var missingSince: TimeInterval?
+    mutating func restartHold() { anchor = nil; since = nil; frames = 0; progress = 0 }
     mutating func reset(requireDeparture: Bool = false) {
-        anchor = nil; since = nil; frames = 0; latched = false
+        restartHold(); latched = false
         requiresDeparture = requireDeparture; missingSince = nil
     }
-    mutating func observe(_ rectangle: CardRectangle?, at time: TimeInterval, focused: Bool = true) -> Bool {
+    mutating func observe(_ rectangle: CardRectangle?, at time: TimeInterval, focused: Bool = true, captureAllowed: Bool = true) -> Bool {
         let candidate = rectangle.flatMap { $0.likelyCard ? $0 : nil }
         if requiresDeparture {
             if candidate == nil {
                 if missingSince == nil { missingSince = time }
-                if time - (missingSince ?? time) >= 0.35 { requiresDeparture = false }
+                // A brief edge-on flip is enough. Keep observing during confirmation.
+                if time - (missingSince ?? time) >= 0.15 { requiresDeparture = false }
             } else { missingSince = nil }
             return false
         }
-        guard !latched, let candidate, focused else { anchor = nil; since = nil; frames = 0; return false }
-        if let anchor, candidate.movement(from: anchor) < 0.018 {
-            frames += 1
-        } else { anchor = candidate; since = time; frames = 1 }
-        if frames >= 6 && time - (since ?? time) >= 0.8 { latched = true; return true }
+        guard !latched, captureAllowed, let candidate, focused else { restartHold(); return false }
+        if let anchor, candidate.movement(from: anchor) < 0.025 { frames += 1 }
+        else { anchor = candidate; since = time; frames = 1 }
+        progress = min(1,max(0,(time - (since ?? time))/0.8))
+        if frames >= 6 && progress >= 1 { latched = true; return true }
         return false
     }
 }
@@ -71,6 +106,9 @@ final class AutoScanCamera: NSObject, ObservableObject, AVCaptureVideoDataOutput
     @Published var rectangle: CardRectangle?
     @Published var message: String?
     @Published var ready = false
+    @Published var waitingForFlip = false
+    @Published var holdProgress = 0.0
+    @Published var guidance = "Position the whole card inside the guide."
     var onCapture: ((CapturedFace) -> Void)?
     private let queue = DispatchQueue(label: "CardLedger.camera", qos: .userInitiated)
     private let context = CIContext()
@@ -78,7 +116,11 @@ final class AutoScanCamera: NSObject, ObservableObject, AVCaptureVideoDataOutput
     private var configured = false
     private var enabled = false
     private var wanted = false
-    private var awaitingBack = false
+    private var captureAllowed = true
+    private var frontCaptured = false
+    private var subjectObserver: NSObjectProtocol?
+    private var focusPoint = CGPoint(x:0.5,y:0.5)
+    private var focusUpdatedAt = -Double.infinity
     private var generation = 0
     private var gate = CaptureGate()
     private var lastFrame = 0.0
@@ -101,7 +143,9 @@ final class AutoScanCamera: NSObject, ObservableObject, AVCaptureVideoDataOutput
             guard let self, self.wanted else { return }
             do {
                 if !self.configured {
-                    guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
+                    // Virtual cameras allow iOS to switch to a close-focusing macro lens.
+                    let types: [AVCaptureDevice.DeviceType] = [.builtInTripleCamera,.builtInDualWideCamera,.builtInWideAngleCamera]
+                    guard let device = types.compactMap({ AVCaptureDevice.default($0,for:.video,position:.back) }).first else {
                         self.publishError("A camera is not available. Use a front photo, then a back photo."); return
                     }
                     let input = try AVCaptureDeviceInput(device: device)
@@ -118,41 +162,102 @@ final class AutoScanCamera: NSObject, ObservableObject, AVCaptureVideoDataOutput
                     if let connection = output.connection(with: .video), connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90 }
                     self.session.commitConfiguration()
                     try device.lockForConfiguration()
-                    if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
-                    if device.isExposureModeSupported(.continuousAutoExposure) { device.exposureMode = .continuousAutoExposure }
+                    // Start at the wide camera's field of view, not the virtual device's ultra-wide 0.5x.
+                    let wideZoom = device.virtualDeviceSwitchOverVideoZoomFactors.first?.doubleValue ?? 1
+                    device.videoZoomFactor = min(device.maxAvailableVideoZoomFactor,max(device.minAvailableVideoZoomFactor,CGFloat(wideZoom)))
+                    if device.activePrimaryConstituentDeviceSwitchingBehavior != .unsupported {
+                        device.setPrimaryConstituentDeviceSwitchingBehavior(.auto,restrictedSwitchingBehaviorConditions:[])
+                    }
+                    if device.isSmoothAutoFocusSupported { device.isSmoothAutoFocusEnabled = false }
+                    device.isSubjectAreaChangeMonitoringEnabled = true
                     device.unlockForConfiguration()
                     self.device = device; self.configured = true
+                    self.subjectObserver = NotificationCenter.default.addObserver(forName:AVCaptureDevice.subjectAreaDidChangeNotification,object:device,queue:nil) { [weak self] _ in
+                        self?.queue.async { [weak self] in
+                            guard let self, self.enabled, CACurrentMediaTime()-self.focusUpdatedAt > 1 else { return }
+                            self.refocus(at:self.focusPoint)
+                        }
+                    }
                 }
                 self.enabled = true
+                self.refocus(at:self.focusPoint)
                 if !self.session.isRunning { self.session.startRunning() }
                 DispatchQueue.main.async { self.ready = true; self.message = nil }
             } catch { self.publishError("The camera could not start. Use a photo below or try again.") }
         }
     }
-    func armBack() { queue.async { self.generation += 1; self.awaitingBack = true; self.gate.reset(requireDeparture: true); self.enabled = true } }
-    func suspend() { queue.async { self.generation += 1; self.wanted = false; self.enabled = false; self.gate.reset(requireDeparture: self.awaitingBack); if self.session.isRunning { self.session.stopRunning() } } }
+    deinit { if let subjectObserver { NotificationCenter.default.removeObserver(subjectObserver) } }
+    // The live path starts observing the flip on the captured frame, before SwiftUI updates.
+    // Photo imports have no live front to depart from, so don't impose that gate.
+    func prepareBack() {
+        queue.async {
+            self.generation += 1
+            if !self.frontCaptured { self.gate.reset(); self.frontCaptured = true }
+            self.captureAllowed = false; self.enabled = true
+        }
+    }
+    func armBack() {
+        queue.async { self.captureAllowed = true; self.enabled = true; self.gate.restartHold(); self.refocus(at:self.focusPoint) }
+    }
+    func suspend() {
+        queue.async {
+            self.generation += 1; self.wanted = false; self.enabled = false
+            // Preserve an already-observed flip through app interruptions and the photo picker.
+            self.gate.restartHold()
+            if self.session.isRunning { self.session.stopRunning() }
+        }
+    }
     func stop() { suspend() }
+    private func refocus(at point: CGPoint) {
+        guard let device else { return }
+        do {
+            try device.lockForConfiguration()
+            defer { device.unlockForConfiguration() }
+            if device.isFocusPointOfInterestSupported { device.focusPointOfInterest = point }
+            if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
+            if device.isExposurePointOfInterestSupported { device.exposurePointOfInterest = point }
+            if device.isExposureModeSupported(.continuousAutoExposure) { device.exposureMode = .continuousAutoExposure }
+            focusPoint = point; focusUpdatedAt = CACurrentMediaTime(); gate.restartHold()
+        } catch { publishError("Autofocus could not update. Move the phone slightly farther away and try again.") }
+    }
+    static func deviceFocusPoint(portraitPoint: CGPoint) -> CGPoint {
+        // Video frames are physically rotated 90 degrees; device focus coordinates are landscape.
+        CGPoint(x:portraitPoint.y,y:1-portraitPoint.x)
+    }
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         let now = CACurrentMediaTime()
         guard enabled, now-lastFrame >= 0.10, let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         lastFrame = now
-        let request = VNDetectRectanglesRequest()
-        request.maximumObservations = 4; request.minimumConfidence = 0.8
-        request.minimumAspectRatio = 0.45; request.maximumAspectRatio = 0.95
-        request.minimumSize = 0.2; request.quadratureTolerance = 20
+        let request = CardBoundaryDetector.request()
         do {
             try VNImageRequestHandler(cvPixelBuffer: buffer, orientation: .up).perform([request])
             let size = CGSize(width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer))
-            let candidates = (request.results ?? []).map { r in
-                CardRectangle(points: [r.topLeft,r.topRight,r.bottomRight,r.bottomLeft].map { CGPoint(x: $0.x,y: 1-$0.y) }, confidence: r.confidence, pixelSize: size)
+            let candidates = CardBoundaryDetector.rectangles(request.results ?? [],size:size)
+            let rectangle = CardBoundaryDetector.outermost(candidates)
+            if let rectangle {
+                let point = Self.deviceFocusPoint(portraitPoint:rectangle.center)
+                if hypot(point.x-focusPoint.x,point.y-focusPoint.y) > 0.08 && now-focusUpdatedAt > 0.8 { refocus(at:point) }
             }
-            let rectangle = candidates.first(where: { $0.likelyCard })
+            let focused = now-focusUpdatedAt > 0.35 && device?.isAdjustingFocus != true && device?.isAdjustingExposure != true
+            let captured = gate.observe(rectangle,at:now,focused:focused,captureAllowed:captureAllowed)
+            let waiting = gate.requiresDeparture, progress = gate.progress
+            let hint: String
+            if waiting { hint = "Flip the card, or briefly move it out of view." }
+            else if !focused { hint = "Focusing… If blurry, move the phone a little farther away." }
+            else if rectangle == nil { hint = "Show all four edges. Try a contrasting background." }
+            else { hint = "Card found. Hold steady…" }
             let currentGeneration = generation
-            DispatchQueue.main.async { [weak self] in self?.rectangle = rectangle }
-            if gate.observe(rectangle, at: now, focused: device?.isAdjustingFocus != true && device?.isAdjustingExposure != true), let rectangle {
+            DispatchQueue.main.async { [weak self] in
+                self?.rectangle = rectangle; self?.waitingForFlip = waiting
+                self?.holdProgress = progress; self?.guidance = hint
+            }
+            if captured, let rectangle {
                 guard let cg = context.createCGImage(CIImage(cvPixelBuffer: buffer), from: CGRect(origin: .zero,size:size)),
                       let data = UIImage(cgImage: cg).jpegData(compressionQuality: 0.95) else { gate.reset(); return }
-                enabled = false
+                if !frontCaptured {
+                    frontCaptured = true; captureAllowed = false
+                    gate.reset(requireDeparture:true)
+                } else { enabled = false }
                 let face = CapturedFace(original: data, crop: rectangle.crop, preview: try? Imaging.cropJPEG(cg, crop: rectangle.crop))
                 // Exactly the detected frame and corners are captured; no second moving-frame exposure.
                 DispatchQueue.main.async { [weak self] in
@@ -163,7 +268,7 @@ final class AutoScanCamera: NSObject, ObservableObject, AVCaptureVideoDataOutput
                     }
                 }
             }
-        } catch { gate.reset() }
+        } catch { gate.restartHold() }
     }
 }
 

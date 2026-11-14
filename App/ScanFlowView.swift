@@ -81,11 +81,12 @@ struct ScanFlowView: View {
     var body: some View {
         ZStack {
             LinearGradient(colors:[Color(red:0.035,green:0.055,blue:0.11),.black],startPoint:.topLeading,endPoint:.bottomTrailing).ignoresSafeArea()
-            if model.scanning { captureScreen.transition(.opacity) }
+            if model.capturing { captureScreen.accessibilityHidden(model.stage == .frontCaptured).transition(.opacity) }
             else { revealScreen.transition(.opacity) }
+            if model.stage == .frontCaptured { frontConfirmation.transition(.opacity) }
             VStack {
                 HStack {
-                    Text(model.scanning ? "ADD TO YOUR COLLECTION" : "CARD LEDGER").font(.caption.weight(.semibold)).tracking(3).foregroundStyle(.white.opacity(0.6))
+                    Text(model.capturing ? "ADD TO YOUR COLLECTION" : "CARD LEDGER").font(.caption.weight(.semibold)).tracking(3).foregroundStyle(.white.opacity(0.6))
                     Spacer()
                     Button { if model.stage == .front { close() } else { discard = true } } label: { Image(systemName:"xmark").font(.body.bold()).frame(width:44,height:44).background(.white.opacity(0.1),in:Circle()) }.accessibilityLabel("Cancel scan")
                 }
@@ -95,28 +96,36 @@ struct ScanFlowView: View {
             .onAppear { setupCamera() }
             .onDisappear { camera.onCapture = nil; camera.stop(); model.cancel() }
             .onChange(of:model.stage) { _,stage in
-                if stage == .back { UIImpactFeedbackGenerator(style:.light).impactOccurred(); camera.armBack() }
-                if !model.scanning { camera.stop() }
+                if stage == .frontCaptured {
+                    camera.prepareBack()
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    UIAccessibility.post(notification:.announcement,argument:"Front captured. Turn your card over.")
+                }
+                if stage == .back {
+                    camera.armBack()
+                    if scenePhase == .active && !choosingPhoto && !loadingPhoto { startCamera() }
+                }
+                if !model.capturing { camera.stop() }
                 if stage == .revealing { withAnimation(reduceMotion ? .easeOut(duration:0.2) : .spring(duration:model.services.revealDuration,bounce:0.22)) { showIdentity = true } }
                 if stage == .ready { onCommit(model.card) }
             }
             .onChange(of:scenePhase) { _,phase in
-                if phase == .active && model.scanning && !choosingPhoto && !loadingPhoto && !model.importing { camera.start() } else { camera.suspend() }
+                if phase == .active && model.capturing && !choosingPhoto && !loadingPhoto && !model.importing { startCamera() } else { camera.suspend() }
             }
             .photosPicker(isPresented:$choosingPhoto,selection:$photo,matching:.images)
             .onChange(of:choosingPhoto) { _,open in
                 if open { camera.suspend() }
-                else if photo == nil { loadingPhoto = false; if model.scanning { camera.start() } }
+                else if photo == nil { loadingPhoto = false; if model.scanning { startCamera() } }
             }
             .onChange(of:photo) { _,item in
                 guard let item else { return }
                 Task {
                     if let data = try? await item.loadTransferable(type:Data.self) { model.importPhoto(data) }
-                    else { model.captureError = "That photo could not be opened. Please choose another."; if model.scanning { camera.start() } }
+                    else { model.captureError = "That photo could not be opened. Please choose another."; if model.scanning { startCamera() } }
                     loadingPhoto = false
                 }
             }
-            .onChange(of:model.importing) { _,busy in if !busy && model.scanning && !choosingPhoto { camera.start() } }
+            .onChange(of:model.importing) { _,busy in if !busy && model.scanning && !choosingPhoto { startCamera() } }
             .confirmationDialog("Discard this scan?",isPresented:$discard,titleVisibility:.visible) { Button("Discard scan",role:.destructive,action:close); Button("Keep scanning",role:.cancel) {} }
     }
     private var captureScreen: some View {
@@ -126,23 +135,55 @@ struct ScanFlowView: View {
                 Capsule().fill(.cyan).frame(width:36,height:4)
                 Capsule().fill(model.stage == .back ? .cyan : .white.opacity(0.2)).frame(width:36,height:4)
             }
-            Text(model.stage == .front ? "Scan front of card" : "Scan back of card").font(.system(size:30,weight:.bold,design:.rounded)).accessibilityIdentifier("scan.instruction")
-            Text(model.stage == .front ? "Hold steady. We’ll capture it automatically." : "Lift the card out of view, flip it, then hold steady.").font(.subheadline).foregroundStyle(.white.opacity(0.65)).multilineTextAlignment(.center).padding(.horizontal)
+            if model.stage == .back {
+                HStack(spacing:8) {
+                    PhotoView(data:model.card.thumbnail ?? model.card.front).frame(width:30,height:42).clipShape(RoundedRectangle(cornerRadius:3))
+                    Label("Front captured",systemImage:"checkmark.circle.fill").font(.subheadline.weight(.semibold)).foregroundStyle(.green)
+                    Text("· 2 of 2").font(.caption).foregroundStyle(.secondary)
+                }.accessibilityIdentifier("scan.frontSaved")
+            }
+            Text(model.stage == .back ? "Scan back of card" : "Scan front of card").font(.system(size:30,weight:.bold,design:.rounded)).accessibilityIdentifier("scan.instruction")
+            Text(model.stage == .back ? "Turn the card over. We’ll capture the back automatically." : "Hold steady. We’ll capture it automatically.").font(.subheadline).foregroundStyle(.white.opacity(0.65)).multilineTextAlignment(.center).padding(.horizontal)
             GeometryReader { proxy in
                 let width = min(proxy.size.width,proxy.size.height*9/16)
                 let height = width*16/9
                 ZStack {
                     LiveCardPreview(camera:camera).clipShape(RoundedRectangle(cornerRadius:24))
-                    VibrantCardGuide().accessibilityHidden(true).allowsHitTesting(false)
+                    VibrantCardGuide().opacity(model.stage == .back ? 0.45:1).accessibilityHidden(true).allowsHitTesting(false)
                     if let rectangle = camera.rectangle {
                         Path { path in path.addLines(rectangle.points.map { CGPoint(x:$0.x*width,y:$0.y*height) }); path.closeSubpath() }.stroke(.cyan,lineWidth:3).shadow(color:.cyan.opacity(0.7),radius:8)
                     }
                 }.frame(width:width,height:height).frame(maxWidth:.infinity,maxHeight:.infinity)
             }.padding(.horizontal,20)
             if model.importing { ProgressView("Finding card edges…").tint(.white) }
+            else {
+                HStack(spacing:12) {
+                    ZStack {
+                        Circle().stroke(.white.opacity(0.2),lineWidth:3)
+                        Circle().trim(from:0,to:camera.holdProgress).stroke(.cyan,style:StrokeStyle(lineWidth:3,lineCap:.round)).rotationEffect(.degrees(-90))
+                        Image(systemName:camera.waitingForFlip ? "arrow.triangle.2.circlepath":"viewfinder").font(.caption)
+                    }.frame(width:32,height:32).accessibilityHidden(true)
+                    Text(camera.guidance).font(.subheadline).multilineTextAlignment(.leading).accessibilityIdentifier("scan.cameraStatus")
+                }.frame(maxWidth:.infinity,alignment:.leading).padding(.horizontal,28).frame(minHeight:44)
+            }
             if let error = model.captureError ?? camera.message { Text(error).font(.caption).foregroundStyle(.white.opacity(0.8)).multilineTextAlignment(.center).padding(.horizontal) }
             Button { photo = nil; loadingPhoto = true; camera.suspend(); choosingPhoto = true } label: { Label("Use a photo instead",systemImage:"photo.on.rectangle").font(.subheadline) }.disabled(model.importing || loadingPhoto).padding(.bottom,24)
         }
+    }
+    private var frontConfirmation: some View {
+        VStack(spacing:22) {
+            Spacer()
+            Image(systemName:"checkmark.circle.fill").font(.system(size:64,weight:.semibold)).foregroundStyle(.green)
+            Text("Front captured!").font(.system(size:34,weight:.bold,design:.rounded)).accessibilityIdentifier("scan.frontConfirmation")
+            PhotoView(data:model.card.thumbnail ?? model.card.front)
+                .frame(width:140,height:196).clipShape(RoundedRectangle(cornerRadius:8))
+                .overlay(RoundedRectangle(cornerRadius:8).stroke(.green.opacity(0.8),lineWidth:2))
+                .shadow(color:.green.opacity(0.2),radius:24)
+            Label("Turn your card over",systemImage:"arrow.triangle.2.circlepath").font(.title3.weight(.semibold))
+            Text("The back scans automatically.").font(.subheadline).foregroundStyle(.white.opacity(0.7))
+            Spacer()
+        }.frame(maxWidth:.infinity,maxHeight:.infinity)
+            .background(Color(red:0.025,green:0.075,blue:0.065).ignoresSafeArea())
     }
     private var revealScreen: some View {
         VStack(spacing:24) {
@@ -171,6 +212,12 @@ struct ScanFlowView: View {
             Spacer()
         }.padding(.horizontal,12)
     }
+    private func startCamera() {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["CARD_LEDGER_SCAN_FIXTURE"] == "1" { return }
+        #endif
+        camera.start()
+    }
     private func setupCamera() {
         camera.onCapture = { face in guard model.scanning, !model.importing, !loadingPhoto else { return }; model.receive(face) }
         #if DEBUG
@@ -184,7 +231,7 @@ struct ScanFlowView: View {
             return
         }
         #endif
-        camera.start()
+        startCamera()
     }
     private func close() { model.cancel(); camera.stop(); onCancel() }
 }

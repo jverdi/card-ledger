@@ -23,6 +23,35 @@ final class CaptureGateTests: XCTestCase {
         for i in 56..<76 { if gate.observe(r,at:Double(i)*0.1) { captures += 1 } }
         XCTAssertEqual(captures,2)
     }
+    func testFlipDuringConfirmationIsRememberedAndBackNeedsFreshHold() {
+        var gate = CaptureGate(); let r = rectangle()
+        gate.reset(requireDeparture:true)
+        XCTAssertFalse(gate.observe(nil,at:0,captureAllowed:false))
+        XCTAssertFalse(gate.observe(nil,at:0.2,captureAllowed:false))
+        XCTAssertFalse(gate.requiresDeparture)
+        for i in 3..<25 { XCTAssertFalse(gate.observe(r,at:Double(i)*0.1,captureAllowed:false)) }
+        gate.restartHold() // background/foreground or confirmation ending must not re-arm the flip
+        XCTAssertFalse(gate.requiresDeparture)
+        XCTAssertFalse(gate.observe(r,at:3))
+        var count = 0
+        for i in 31..<50 { if gate.observe(r,at:Double(i)*0.1) { count += 1 } }
+        XCTAssertEqual(count,1)
+    }
+    func testSingleMissingFrameCannotRearmTheFront() {
+        var gate = CaptureGate(); gate.reset(requireDeparture:true)
+        _ = gate.observe(nil,at:0)
+        for i in 1..<20 { XCTAssertFalse(gate.observe(rectangle(),at:Double(i)*0.1)) }
+        XCTAssertTrue(gate.requiresDeparture)
+    }
+    func testFocusLossResetsHoldAndPortraitFocusCoordinates() {
+        var gate = CaptureGate(); let r = rectangle()
+        for i in 0..<8 { XCTAssertFalse(gate.observe(r,at:Double(i)*0.1)) }
+        XCTAssertGreaterThan(gate.progress,0.7)
+        XCTAssertFalse(gate.observe(r,at:0.8,focused:false)); XCTAssertEqual(gate.progress,0)
+        for i in 9..<17 { XCTAssertFalse(gate.observe(r,at:Double(i)*0.1)) }
+        XCTAssertTrue(gate.observe(r,at:1.8))
+        XCTAssertEqual(AutoScanCamera.deviceFocusPoint(portraitPoint:CGPoint(x:0.2,y:0.7)),CGPoint(x:0.7,y:0.8))
+    }
     func testFocusMustSettle() {
         var gate = CaptureGate()
         for i in 0..<20 { XCTAssertFalse(gate.observe(rectangle(),at:Double(i)*0.1,focused:false)) }
@@ -33,9 +62,15 @@ final class CaptureGateTests: XCTestCase {
         ScanServices(process:{ PhotoResult(original:$0.original,corrected:$0.original,text:$0.original == Data([1]) ? "Front OCR":"Back OCR") },identify:{ text in
             XCTAssertTrue(text.contains("Front OCR")); XCTAssertTrue(text.contains("Back OCR"))
             return Identity(player:"Rookie",team:"Team",year:"2026",set:"Set",number:"1",variant:"Base")
-        },lookup:lookup,canLookup:true,revealDuration:0.02,spinnerDelay:0.05,minimumReveal:0.04,collapseDuration:0.01)
+        },lookup:lookup,canLookup:true,revealDuration:0.02,spinnerDelay:0.05,minimumReveal:0.04,collapseDuration:0.01,confirmationDuration:0.03)
     }
-    func feed(_ model:ScanFlowModel) { model.receive(CapturedFace(original:Data([1]),crop:CropSelection())); XCTAssertEqual(model.stage,.back); model.receive(CapturedFace(original:Data([2]),crop:CropSelection())) }
+    func feed(_ model:ScanFlowModel) async throws {
+        model.receive(CapturedFace(original:Data([1]),crop:CropSelection()))
+        XCTAssertEqual(model.stage,.frontCaptured)
+        XCTAssertFalse(model.scanning); XCTAssertTrue(model.capturing)
+        try await waitUntil { model.stage == .back }
+        model.receive(CapturedFace(original:Data([2]),crop:CropSelection()))
+    }
     func waitUntil(_ predicate: @escaping () -> Bool) async throws {
         for _ in 0..<100 { if predicate() { return }; try await Task.sleep(for:.milliseconds(10)) }
         XCTFail("Flow did not reach expected state")
@@ -45,7 +80,7 @@ final class CaptureGateTests: XCTestCase {
             XCTAssertFalse(identity.confirmed)
             try await Task.sleep(for:.milliseconds(250)); throw ScanFailure.timeout
         })
-        feed(model)
+        try await feed(model)
         try await waitUntil { model.stage == .revealing }
         XCTAssertFalse(model.showPriceSpinner)
         try await waitUntil { model.showPriceSpinner }
@@ -56,9 +91,21 @@ final class CaptureGateTests: XCTestCase {
     }
     func testCancellationCannotFinishOrInsertAnIncompleteCard() async throws {
         let model = ScanFlowModel(services:services { _ in try await Task.sleep(for:.seconds(10)); throw ScanFailure.timeout })
-        feed(model); try await waitUntil { model.pricePending }; model.cancel()
+        try await feed(model); try await waitUntil { model.pricePending }; model.cancel()
         try await Task.sleep(for:.milliseconds(100))
         XCTAssertNotEqual(model.stage,.ready)
+    }
+    func testConfirmationIgnoresExtraFramesAndCancellationStopsTransition() async throws {
+        let model = ScanFlowModel(services:services { _ in throw ScanFailure.timeout })
+        let front = CapturedFace(original:Data([1]),crop:CropSelection())
+        model.receive(front)
+        XCTAssertEqual(model.stage,.frontCaptured)
+        model.receive(front)
+        XCTAssertNil(model.card.back)
+        model.cancel()
+        try await Task.sleep(for:.milliseconds(80))
+        XCTAssertEqual(model.stage,.frontCaptured)
+        XCTAssertNil(model.card.back)
     }
     func testCancelledScanRejectsLateCapture() {
         let model = ScanFlowModel(services:services { _ in throw ScanFailure.timeout })
@@ -71,7 +118,7 @@ final class CaptureGateTests: XCTestCase {
         let model = ScanFlowModel(services:services { _ in
             Research(searched_at:"2026-11-14",identity_status:"confirmed",unresolved_fields:[],queries_used:[],observations:[],valuation_basis:"sold_comps",limitations:[],estimate:25,low:20,high:30,sample_count:5)
         })
-        feed(model); try await waitUntil { model.stage == .ready }
+        try await feed(model); try await waitUntil { model.stage == .ready }
         XCTAssertFalse(model.showPriceSpinner); XCTAssertEqual(model.card.research?.estimate,25)
     }
 }
