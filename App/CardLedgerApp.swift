@@ -88,6 +88,32 @@ struct CardEditor: View {
     var body: some View {
         NavigationStack {
             Form {
+                photosSection
+                identitySection
+                collectionSection
+                researchSection
+                deleteSection
+            }.disabled(busy).overlay { if busy { ProgressView("Working…").padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14)) } }
+                .navigationTitle("Card details").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(busy) }
+                    ToolbarItem(placement: .confirmationAction) { Button("Save") { do { try store.save(card); dismiss() } catch { message = error.localizedDescription } }.disabled(busy) }
+                }
+                .onChange(of: photo) { _, value in
+                    let selectedSide = side
+                    run { if let data = try await value?.loadTransferable(type: Data.self) { try await ingest(data, side: selectedSide) } }
+                }
+                .onChange(of: card.status) { _, value in card.dispositionDate = value == "Owned" ? nil : Date() }
+                .onChange(of: card.identity.details) { _, _ in
+                    card.identity.confirmed = false
+                    card.research = nil
+                }
+                .sheet(isPresented: $camera) { Camera { data in let selectedSide = side; run { try await ingest(data, side: selectedSide) } } }
+                .alert("Card Ledger", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) { Button("OK") { message = nil } } message: { Text(message ?? "") }
+                .confirmationDialog("Permanently delete this card and its photos?", isPresented: $deleting, titleVisibility: .visible) { Button("Delete", role: .destructive) { do { try store.delete(card.id); dismiss() } catch { message = error.localizedDescription } } }
+        }
+    }
+    private var photosSection: some View {
                 Section("Photographs") {
                     HStack { PhotoView(data: card.thumbnail ?? card.front); PhotoView(data: card.back) }.frame(height: 220)
                     Picker("Side", selection: $side) { Text("Front").tag("Front"); Text("Back").tag("Back") }.pickerStyle(.segmented)
@@ -97,6 +123,8 @@ struct CardEditor: View {
                     Button("Read card details with Apple Intelligence") { run { card.identity = try await Recognizer.identify(text: card.ocr) } }.disabled(card.ocr.isEmpty)
                     if !card.ocr.isEmpty { DisclosureGroup("Extracted text") { Text(card.ocr).textSelection(.enabled) } }
                 }
+    }
+    private var identitySection: some View {
                 Section("Confirm identity") {
                     TextField("Player / card name", text: $card.identity.player)
                     TextField("Team printed on card", text: $card.identity.team)
@@ -110,12 +138,16 @@ struct CardEditor: View {
                     TextField("Certificate number", text: $card.identity.certificate)
                     Toggle("I have verified this exact card", isOn: $card.identity.confirmed)
                 }
+    }
+    private var collectionSection: some View {
                 Section("Collection") {
                     TextField("Tags / owner", text: $card.tags)
                     TextField("Binder / box location", text: $card.location)
                     TextField("Condition and notes", text: $card.notes, axis: .vertical)
                     Picker("Status", selection: $card.status) { ForEach(["Owned", "Sold", "Gifted"], id: \.self) { Text($0) } }
                 }
+    }
+    private var researchSection: some View {
                 Section("Market research") {
                     Text("Research sends the confirmed card details to your private worker. Photos stay on this device.").font(.caption)
                     Button("Look up current value", systemImage: "magnifyingglass") { run {
@@ -142,26 +174,9 @@ struct CardEditor: View {
                         }
                     }
                 }
+    }
+    private var deleteSection: some View {
                 Section { Button("Delete card permanently", role: .destructive) { deleting = true } }
-            }.disabled(busy).overlay { if busy { ProgressView("Working…").padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14)) } }
-                .navigationTitle("Card details").navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(busy) }
-                    ToolbarItem(placement: .confirmationAction) { Button("Save") { do { try store.save(card); dismiss() } catch { message = error.localizedDescription } }.disabled(busy) }
-                }
-                .onChange(of: photo) { _, value in
-                    let selectedSide = side
-                    run { if let data = try await value?.loadTransferable(type: Data.self) { try await ingest(data, side: selectedSide) } }
-                }
-                .onChange(of: card.status) { _, value in card.dispositionDate = value == "Owned" ? nil : Date() }
-                .onChange(of: card.identity.details) { _, _ in
-                    card.identity.confirmed = false
-                    card.research = nil
-                }
-                .sheet(isPresented: $camera) { Camera { data in let selectedSide = side; run { try await ingest(data, side: selectedSide) } } }
-                .alert("Card Ledger", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) { Button("OK") { message = nil } } message: { Text(message ?? "") }
-                .confirmationDialog("Permanently delete this card and its photos?", isPresented: $deleting, titleVisibility: .visible) { Button("Delete", role: .destructive) { do { try store.delete(card.id); dismiss() } catch { message = error.localizedDescription } } }
-        }
     }
     func run(_ action: @escaping @MainActor () async throws -> Void) {
         guard !busy else { return }; busy = true
