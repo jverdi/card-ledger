@@ -16,7 +16,7 @@ try:
     if device['state'] != 'Booted':
         run(['xcrun', 'simctl', 'boot', device['udid']], 60)
     try:
-        run(['xcrun', 'simctl', 'bootstatus', device['udid'], '-b'], 240)
+        run(['xcrun', 'simctl', 'bootstatus', device['udid'], '-b'], 90)
     except subprocess.TimeoutExpired:
         # A fresh GitHub runner occasionally stalls during first simulator boot.
         # Retry startup once; test failures are never retried or hidden.

@@ -15,7 +15,13 @@ struct CardRectangle: Equatable {
         let width = (distance(points[0], points[1]) + distance(points[3], points[2])) / 2
         let height = (distance(points[0], points[3]) + distance(points[1], points[2])) / 2
         let aspect = min(width,height) / max(width,height)
-        let area = abs(zip(points, Array(points.dropFirst()) + [points[0]]).reduce(CGFloat.zero) { $0 + $1.0.x * $1.1.y - $1.1.x * $1.0.y }) / 2
+        var twiceArea: CGFloat = 0
+        for index in 0..<4 {
+            let a = points[index]
+            let b = points[(index + 1) % 4]
+            twiceArea += a.x * b.y - b.x * a.y
+        }
+        let area = abs(twiceArea) / 2
         return (0.55...0.84).contains(aspect) && (0.12...0.88).contains(area)
     }
     func movement(from other: CardRectangle) -> CGFloat {

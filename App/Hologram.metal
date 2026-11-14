@@ -7,6 +7,8 @@ using namespace metal;
     float band = exp(-pow((uv.x + uv.y * 0.48 - 0.75 - sweep) * 4.0, 2.0));
     float3 rainbow = 0.5 + 0.5 * cos(6.28318 * (uv.x * 0.8 + uv.y * 0.55 + time * 0.07 + float3(0.0,0.33,0.67)));
     float glint = pow(max(0.0, sin((uv.x - uv.y + time * 0.13) * 21.0)), 24.0) * band;
-    half3 shine = half3(rainbow * band * 0.22 + glint * 0.12) * color.a;
-    return half4(min(color.rgb + shine, half3(color.a)), color.a);
+    // Tint as well as brighten so white card stock can still show iridescence.
+    half3 foil = mix(color.rgb, half3(rainbow) * color.a, half(band * 0.20));
+    half3 shine = half3(glint * 0.12) * color.a;
+    return half4(min(foil + shine, half3(color.a)), color.a);
 }
