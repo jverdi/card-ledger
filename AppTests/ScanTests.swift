@@ -75,7 +75,7 @@ final class CaptureGateTests: XCTestCase {
         for _ in 0..<100 { if predicate() { return }; try await Task.sleep(for:.milliseconds(10)) }
         XCTFail("Flow did not reach expected state")
     }
-    func testSlowPricingShowsDelayedSpinnerThenCompletesWithoutPrice() async throws {
+    func testSlowPricingShowsDelayedSpinnerThenWaitsForContinueWithoutPrice() async throws {
         let model = ScanFlowModel(services:services { identity in
             XCTAssertFalse(identity.confirmed)
             try await Task.sleep(for:.milliseconds(250)); throw ScanFailure.timeout
@@ -84,7 +84,10 @@ final class CaptureGateTests: XCTestCase {
         try await waitUntil { model.stage == .revealing }
         XCTAssertFalse(model.showPriceSpinner)
         try await waitUntil { model.showPriceSpinner }
-        try await waitUntil { model.stage == .ready }
+        model.continueToCollection()
+        XCTAssertEqual(model.stage,.revealing)
+        try await waitUntil { model.canContinue }
+        XCTAssertEqual(model.stage,.review)
         XCTAssertFalse(model.showPriceSpinner)
         XCTAssertNotNil(model.card.front); XCTAssertNotNil(model.card.backCorrected)
         XCTAssertNil(model.card.research); XCTAssertNotNil(model.card.scanNote)
@@ -118,7 +121,35 @@ final class CaptureGateTests: XCTestCase {
         let model = ScanFlowModel(services:services { _ in
             Research(searched_at:"2026-11-14",identity_status:"confirmed",unresolved_fields:[],queries_used:[],observations:[],valuation_basis:"sold_comps",limitations:[],estimate:25,low:20,high:30,sample_count:5)
         })
-        try await feed(model); try await waitUntil { model.stage == .ready }
+        try await feed(model); try await waitUntil { model.canContinue }
         XCTAssertFalse(model.showPriceSpinner); XCTAssertEqual(model.card.research?.estimate,25)
+        try await Task.sleep(for:.milliseconds(150))
+        XCTAssertEqual(model.stage,.review)
+        model.continueToCollection(); model.continueToCollection()
+        XCTAssertEqual(model.stage,.compact)
+        XCTAssertFalse(model.canContinue)
+        try await waitUntil { model.stage == .ready }
     }
+    func testUnavailablePricingStillOffersContinueAndCancellationPreventsInsertion() async throws {
+        var configuration = services { _ in XCTFail("Unconfigured pricing should not run"); throw ScanFailure.timeout }
+        configuration.canLookup = false
+        let model = ScanFlowModel(services:configuration)
+        try await feed(model); try await waitUntil { model.canContinue }
+        XCTAssertNotNil(model.card.scanNote)
+        XCTAssertFalse(model.pricePending)
+        model.cancel(); model.continueToCollection()
+        try await Task.sleep(for:.milliseconds(60))
+        XCTAssertEqual(model.stage,.review)
+        XCTAssertFalse(model.canContinue)
+    }
+    func testCancellationDuringContinueAnimationPreventsInsertion() async throws {
+        var configuration = services { _ in throw ScanFailure.timeout }
+        configuration.collapseDuration = 0.1
+        let model = ScanFlowModel(services:configuration)
+        try await feed(model); try await waitUntil { model.canContinue }
+        model.continueToCollection(); model.cancel()
+        try await Task.sleep(for:.milliseconds(150))
+        XCTAssertNotEqual(model.stage,.ready)
+    }
+
 }

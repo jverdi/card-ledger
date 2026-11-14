@@ -1,7 +1,7 @@
 import XCTest
 
 @MainActor final class CollectionUITests: XCTestCase {
-    func testAutomaticScanAddsCardAndFormOnlyEdits() async throws {
+    func testGuidedScanAndSavedCardViewerEditRemove() async throws {
         executionTimeAllowance = 120 // Includes simulator relaunch, Vision and UI animations.
         let app = XCUIApplication()
         app.launchEnvironment["CARD_LEDGER_UI_TEST_STORE"] = UUID().uuidString
@@ -19,8 +19,11 @@ import XCTest
         let backGuide = XCTAttachment(screenshot:app.screenshot()); backGuide.name = "Back scan with persistent front confirmation"; backGuide.lifetime = .keepAlways; add(backGuide)
         XCTAssertTrue(app.staticTexts["UI Rookie"].waitForExistence(timeout:20))
         XCTAssertTrue(app.otherElements["scan.cardReveal"].exists || app.images["scan.cardReveal"].exists || app.descendants(matching:.any)["scan.cardReveal"].exists)
+        XCTAssertTrue(app.buttons["scan.continue"].waitForExistence(timeout:15))
         let reveal = XCTAttachment(screenshot:app.screenshot()); reveal.name = "Two-sided holographic reveal"; reveal.lifetime = .keepAlways; add(reveal)
         let row = app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","card.row.")).firstMatch
+        XCTAssertFalse(row.exists)
+        app.buttons["scan.continue"].tap()
         XCTAssertTrue(row.waitForExistence(timeout:30))
         row.tap()
         XCTAssertTrue(app.buttons["card.detail.actions"].waitForExistence(timeout:5))

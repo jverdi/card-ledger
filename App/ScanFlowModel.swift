@@ -28,7 +28,7 @@ struct ScanServices {
 }
 
 @MainActor final class ScanFlowModel: ObservableObject, Identifiable {
-    enum Stage: Equatable { case front, frontCaptured, back, identifying, revealing, compact, ready }
+    enum Stage: Equatable { case front, frontCaptured, back, identifying, revealing, review, compact, ready }
     let id: UUID
     @Published private(set) var card: Card
     @Published private(set) var stage: Stage = .front
@@ -44,6 +44,7 @@ struct ScanServices {
     private var spinner: Task<Void, Never>?
     private var confirmation: Task<Void, Never>?
     let services: ScanServices
+    var canContinue: Bool { !cancelled && stage == .review }
     var scanning: Bool { stage == .front || stage == .back }
     var capturing: Bool { scanning || stage == .frontCaptured }
     var player: String { card.identity.player.isEmpty ? "Card captured" : card.identity.player }
@@ -134,13 +135,23 @@ struct ScanServices {
         }
         pricePending = false; spinner?.cancel(); showPriceSpinner = false
         do {
-            try await pause(max(0,services.minimumReveal - Date().timeIntervalSince(revealedAt)))
+            try await pause(max(0,max(services.minimumReveal,services.revealDuration) - Date().timeIntervalSince(revealedAt)))
             try Task.checkCancellation()
-            withAnimation(.spring(duration: services.collapseDuration, bounce: 0.12)) { stage = .compact }
-            try await pause(services.collapseDuration)
-            try Task.checkCancellation()
-            stage = .ready
+            stage = .review
         } catch { }
+    }
+    func continueToCollection() {
+        guard canContinue else { return }
+        // Change synchronously so repeated taps cannot enqueue another insertion.
+        withAnimation(.spring(duration:services.collapseDuration,bounce:0.12)) { stage = .compact }
+        task = Task {
+            do {
+                try await pause(services.collapseDuration)
+                try Task.checkCancellation()
+                guard !cancelled else { return }
+                stage = .ready
+            } catch { }
+        }
     }
     func cancel() { cancelled = true; task?.cancel(); spinner?.cancel(); confirmation?.cancel(); pricePending = false; showPriceSpinner = false }
 }

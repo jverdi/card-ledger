@@ -201,10 +201,17 @@ struct ScanFlowView: View {
                     .opacity(showIdentity ? 1:0).offset(y:showIdentity ? 0:24).scaleEffect(showIdentity ? 1:0.92).blur(radius:showIdentity ? 0:8)
                 VStack(spacing:10) {
                     if model.stage == .identifying { Text("Reading both sides").font(.subheadline).foregroundStyle(.white.opacity(0.6)).accessibilityIdentifier("scan.identifying") }
-                    if model.showPriceSpinner { ProgressView().tint(.cyan); Text("Finding comparable sales").font(.caption).foregroundStyle(.white.opacity(0.6)).accessibilityIdentifier("scan.priceLoading") }
                     if showIdentity && !model.pricePending {
                         if let value = model.card.research?.estimate { Text(value,format:.currency(code:"USD")).font(.title2.bold()) }
                         else { Text(model.card.scanNote ?? "Price unavailable").font(.caption).foregroundStyle(.white.opacity(0.6)).multilineTextAlignment(.center) }
+                    }
+                    if model.showPriceSpinner {
+                        ProgressView().tint(.cyan)
+                        Text("Finding comparable sales").font(.caption).foregroundStyle(.white.opacity(0.6)).accessibilityIdentifier("scan.priceLoading")
+                    } else if model.canContinue {
+                        Button("Continue",action:model.continueToCollection)
+                            .font(.headline).buttonStyle(.borderedProminent).tint(.cyan).foregroundStyle(.black)
+                            .controlSize(.large).accessibilityIdentifier("scan.continue")
                     }
                 }.frame(minHeight:55)
             }
