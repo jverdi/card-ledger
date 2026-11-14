@@ -60,6 +60,13 @@ final class CaptureGateTests: XCTestCase {
         try await Task.sleep(for:.milliseconds(100))
         XCTAssertNotEqual(model.stage,.ready)
     }
+    func testCancelledScanRejectsLateCapture() {
+        let model = ScanFlowModel(services:services { _ in throw ScanFailure.timeout })
+        model.cancel()
+        model.receive(CapturedFace(original:Data([1]),crop:CropSelection()))
+        XCTAssertEqual(model.stage,.front)
+        XCTAssertNil(model.card.front)
+    }
     func testFastPriceSkipsSpinner() async throws {
         let model = ScanFlowModel(services:services { _ in
             Research(searched_at:"2026-11-14",identity_status:"confirmed",unresolved_fields:[],queries_used:[],observations:[],valuation_basis:"sold_comps",limitations:[],estimate:25,low:20,high:30,sample_count:5)

@@ -93,7 +93,7 @@ struct ScanFlowView: View {
             .onChange(of:model.stage) { _,stage in
                 if stage == .back { UIImpactFeedbackGenerator(style:.light).impactOccurred(); camera.armBack() }
                 if !model.scanning { camera.stop() }
-                if stage == .revealing { withAnimation(reduceMotion ? .easeOut(duration:0.2) : .spring(response:model.services.revealDuration,dampingFraction:0.78)) { showIdentity = true } }
+                if stage == .revealing { withAnimation(reduceMotion ? .easeOut(duration:0.2) : .spring(duration:model.services.revealDuration,bounce:0.22)) { showIdentity = true } }
                 if stage == .ready { onCommit(model.card) }
             }
             .onChange(of:scenePhase) { _,phase in

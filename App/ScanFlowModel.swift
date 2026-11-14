@@ -96,7 +96,7 @@ struct ScanServices {
             card.scanNote = "Photo processing needs review. Original photos are saved."
         }
         guard !Task.isCancelled else { return }
-        withAnimation(.spring(response: services.revealDuration, dampingFraction: 0.8)) { stage = .revealing }
+        withAnimation(.spring(duration: services.revealDuration, bounce: 0.2)) { stage = .revealing }
         let revealedAt = Date()
         pricePending = services.canLookup && card.identity.canResearchAutomatically
         if pricePending {
@@ -122,7 +122,7 @@ struct ScanServices {
         do {
             try await pause(max(0,services.minimumReveal - Date().timeIntervalSince(revealedAt)))
             try Task.checkCancellation()
-            withAnimation(.spring(response: services.collapseDuration, dampingFraction: 0.88)) { stage = .compact }
+            withAnimation(.spring(duration: services.collapseDuration, bounce: 0.12)) { stage = .compact }
             try await pause(services.collapseDuration)
             try Task.checkCancellation()
             stage = .ready
