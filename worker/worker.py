@@ -12,12 +12,13 @@ FIELDS = {'player','team','sport','year','manufacturer','set','number','variant'
 LOCK = threading.Semaphore(1)
 
 def validate_input(card):
-    if not isinstance(card, dict) or set(card) != FIELDS or card['confirmed'] is not True:
-        raise ValueError('A confirmed identity with all fields is required')
+    if not isinstance(card, dict) or set(card) != FIELDS or not isinstance(card['confirmed'], bool):
+        raise ValueError('A candidate identity with all fields and a review flag is required')
     if any(not isinstance(v, str) or len(v) > 250 for k,v in card.items() if k != 'confirmed'):
         raise ValueError('Invalid identity field')
-    if any(not card[k].strip() for k in ('player','year','set','number','variant','grade')):
-        raise ValueError('Complete player, year, set, number, variant and grade first')
+    required = ('player','year','set','number','variant','grade') if card['confirmed'] else ('player','year','set','number')
+    if any(not card[k].strip() for k in required):
+        raise ValueError('Complete the identifying fields before research')
 
 def canonical(url):
     p = urlparse(url)

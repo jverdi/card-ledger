@@ -67,6 +67,7 @@ struct Card: Codable, Identifiable {
     var backCorrected: Data?
     var frontCrop: CropSelection?
     var backCrop: CropSelection?
+    var scanNote: String?
     var collectionValue: Double? { manualValue.map { NSDecimalNumber(decimal: $0).doubleValue } ?? research?.estimate }
     var valueLabel: String { manualValue != nil ? "Your value" : "Sold-comps estimate" }
     var front: Data?

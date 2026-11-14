@@ -18,8 +18,12 @@ enum Credentials {
     }
 }
 enum ResearchClient {
+    static func configured(base: String) -> Bool {
+        guard let url = URL(string: base), url.scheme == "https", url.host != nil, url.user == nil, url.password == nil else { return false }
+        return !Credentials.read().isEmpty
+    }
     static func lookup(_ identity: Identity, base: String) async throws -> Research {
-        guard identity.confirmed, let url = URL(string: base), url.scheme == "https", url.host != nil, url.user == nil, url.password == nil else { throw ClientError.configuration }
+        guard (identity.confirmed || identity.canResearchAutomatically), let url = URL(string: base), url.scheme == "https", url.host != nil, url.user == nil, url.password == nil else { throw ClientError.configuration }
         var request = URLRequest(url: url.appending(path: "research")); request.httpMethod = "POST"
         request.timeoutInterval = 240
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

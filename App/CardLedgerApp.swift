@@ -27,6 +27,9 @@ struct CollectionView: View {
     @State private var availability = "All values"
     @State private var editing: Card?
     @State private var settings = false
+    @State private var scan: ScanFlowModel?
+    @Namespace private var scanFlight
+    @State private var inserted: UUID?
     var visible: [Card] {
         store.cards.filter { card in
             (status == "All" || card.status == status) && (sport == "All sports" || card.identity.sport == sport) &&
@@ -45,7 +48,17 @@ struct CollectionView: View {
         }
     }
     var body: some View {
+        ZStack {
+            collectionContent.allowsHitTesting(scan == nil).accessibilityHidden(scan != nil)
+            if let scan {
+                ScanFlowView(model:scan,namespace:scanFlight,onCancel:{ withAnimation { self.scan = nil } },onCommit:finishScan)
+                    .transition(.opacity).zIndex(2)
+            }
+        }
+    }
+    private var collectionContent: some View {
         NavigationStack {
+            ScrollViewReader { proxy in
             List {
                 Section {
                     let owned = store.cards.filter { $0.status == "Owned" }
@@ -70,26 +83,39 @@ struct CollectionView: View {
                 if visible.isEmpty { ContentUnavailableView("Your collection starts here", systemImage: "rectangle.stack", description: Text("Tap + to photograph or add a card.")) }
                 ForEach(visible) { card in
                     Button { editing = card } label: {
-                        HStack(spacing: 12) {
-                            PhotoView(data: card.thumbnail ?? card.front).frame(width: 58, height: 80).clipShape(RoundedRectangle(cornerRadius: 6))
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(card.identity.title.isEmpty ? "Unidentified card" : card.identity.title).font(.headline)
-                                Text("\(card.identity.grade) · \(card.identity.variant)").font(.caption).foregroundStyle(.secondary)
-                                if let value = card.collectionValue { Text(value, format: .currency(code: "USD")); Text(card.valueLabel).font(.caption2).foregroundStyle(.secondary) }
-                                else { Text("Not valued").foregroundStyle(.secondary) }
-                            }
-                        }
-                    }.foregroundStyle(.primary)
+                        CardCollectionRow(card:card,namespace:scanFlight)
+                    }.foregroundStyle(.primary).id(card.id).accessibilityIdentifier("card.row." + card.id.uuidString)
                 }
             }.navigationTitle("Card Ledger").searchable(text: $query, prompt: "Player, team, set, tag or location")
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) { Button("Settings", systemImage: "gearshape") { settings = true } }
-                    ToolbarItem(placement: .topBarTrailing) { Button("Add card", systemImage: "plus") { editing = Card() }.accessibilityIdentifier("collection.add") }
+                    ToolbarItem(placement: .topBarTrailing) { Button("Add card", systemImage: "plus", action:startScan).accessibilityIdentifier("collection.add") }
                 }
+                .onChange(of: inserted) { _,id in if let id { withAnimation(.spring(response:0.65,dampingFraction:0.88)) { proxy.scrollTo(id,anchor:.center) } } }
                 .sheet(item: $editing) { card in CardEditor(card: card) }
                 .sheet(isPresented: $settings) { SettingsView() }
                 .alert("Collection error", isPresented: Binding(get: { store.error != nil }, set: { if !$0 { store.error = nil } })) { Button("OK") { store.error = nil } } message: { Text(store.error ?? "") }
+            }
         }
+    }
+    private func startScan() {
+        query = ""; status = "Owned"; sport = "All sports"; year = "All years"; grading = "All grades"; tag = ""; availability = "All values"; sort = "Newest"
+        var services = ScanServices.live(workerURL:UserDefaults.standard.string(forKey:"workerURL") ?? "")
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["CARD_LEDGER_SCAN_FIXTURE"] == "1" {
+            services.identify = { _ in Identity(player:"UI Rookie",team:"Brooklyn",year:"2026",manufacturer:"Test Brand",set:"Test Set",number:"1",variant:"Base",grade:"Raw") }
+            services.canLookup = false
+        }
+        #endif
+        withAnimation(.easeInOut(duration:0.25)) { scan = ScanFlowModel(services:services) }
+    }
+    private func finishScan(_ card: Card) {
+        do {
+            try withAnimation(.spring(response:0.7,dampingFraction:0.88)) {
+                try store.save(card); scan = nil; inserted = card.id
+            }
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        } catch { scan?.saveError = "Your scan is ready, but could not be saved. " + error.localizedDescription }
     }
 }
 struct PhotoView: View {

@@ -6,6 +6,22 @@ import FoundationModels
 
 struct PhotoResult { let original: Data; let corrected: Data; let text: String }
 enum Imaging {
+    static func detectCard(_ data: Data) async throws -> CapturedFace {
+        try await Task.detached {
+            guard let source = UIImage(data: data) else { throw CocoaError(.fileReadCorruptFile) }
+            let image = rotated(source, quarterTurns: 0)
+            guard let cg = image.cgImage else { throw CocoaError(.fileReadCorruptFile) }
+            let request = VNDetectRectanglesRequest(); request.maximumObservations = 4
+            request.minimumConfidence = 0.8; request.minimumAspectRatio = 0.45; request.maximumAspectRatio = 0.95; request.minimumSize = 0.2
+            try VNImageRequestHandler(cgImage: cg).perform([request])
+            let size = CGSize(width: cg.width, height: cg.height)
+            let rectangles = (request.results ?? []).map { r in
+                CardRectangle(points: [r.topLeft,r.topRight,r.bottomRight,r.bottomLeft].map { CGPoint(x: $0.x,y: 1-$0.y) }, confidence: r.confidence, pixelSize: size)
+            }
+            guard let rectangle = rectangles.first(where: { $0.likelyCard }) else { throw ScanFailure.noRectangle }
+            return CapturedFace(original: data, crop: rectangle.crop)
+        }.value
+    }
     static func rotated(_ image: UIImage, quarterTurns: Int) -> UIImage {
         let turns = ((quarterTurns % 4) + 4) % 4
         let size = turns % 2 == 0 ? image.size : CGSize(width: image.size.height, height: image.size.width)

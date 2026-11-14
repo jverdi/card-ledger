@@ -1,24 +1,27 @@
 import XCTest
 
 @MainActor final class CollectionUITests: XCTestCase {
-    func testManualCardSurvivesAppRestart() async throws {
+    func testAutomaticScanAddsCardAndFormOnlyEdits() async throws {
         let app = XCUIApplication()
         app.launchEnvironment["CARD_LEDGER_UI_TEST_STORE"] = UUID().uuidString
+        app.launchEnvironment["CARD_LEDGER_SCAN_FIXTURE"] = "1"
         app.launch()
-        XCTAssertTrue(app.buttons["collection.add"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["collection.add"].waitForExistence(timeout:20))
         app.buttons["collection.add"].tap()
+        XCTAssertTrue(app.staticTexts["Scan front of card"].waitForExistence(timeout:5))
+        XCTAssertFalse(app.textFields["card.player"].exists)
+        XCTAssertTrue(app.staticTexts["Scan back of card"].waitForExistence(timeout:8))
+        let row = app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","card.row.")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout:30))
+        row.tap()
         let player = app.textFields["card.player"]
-        // Identity fields follow the photo section; scroll until the field is reachable.
-        for _ in 0..<4 where !player.isHittable { app.swipeUp() }
-        XCTAssertTrue(player.waitForExistence(timeout: 5))
-        player.tap(); player.typeText("UI Rookie")
+        for _ in 0..<5 where !player.isHittable { app.swipeUp() }
+        XCTAssertEqual(player.value as? String,"UI Rookie")
+        player.tap(); player.typeText(" Edited")
         app.buttons["card.save"].tap()
-        let saved = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "UI Rookie")).firstMatch
-        XCTAssertTrue(saved.waitForExistence(timeout: 10))
         app.terminate(); app.launch()
-        XCTAssertTrue(saved.waitForExistence(timeout: 20))
-        let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = "Saved Card Ledger collection"; screenshot.lifetime = .keepAlways
-        add(screenshot)
+        XCTAssertTrue(row.waitForExistence(timeout:20))
+        XCTAssertTrue(row.label.contains("UI Rookie Edited"))
+        let shot = XCTAttachment(screenshot:app.screenshot()); shot.name = "Automatic scan collection"; shot.lifetime = .keepAlways; add(shot)
     }
 }

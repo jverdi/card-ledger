@@ -36,6 +36,12 @@ class PricingTests(unittest.TestCase):
         f=fixture()
         for o in f['observations']: o['sale_date']='2026-02-01'
         r=calculate(f,date(2026,11,14)); self.assertEqual(r['estimate'],30); self.assertTrue(r['limitations'])
+    def test_automatic_candidate_does_not_require_fake_user_confirmation(self):
+        card=dict(player='Rookie',team='Team',sport='Baseball',year='2026',manufacturer='Maker',set='Set',number='1',variant='',grade='Raw',certificate='',confirmed=False)
+        validate_input(card)
+        self.assertFalse(card['confirmed'])
+        card['confirmed']='false'
+        with self.assertRaises(ValueError): validate_input(card)
     def test_incomplete_input(self):
         with self.assertRaises(ValueError): validate_input({'confirmed':True})
     def test_source_url(self):
