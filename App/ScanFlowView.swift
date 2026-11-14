@@ -149,7 +149,7 @@ struct ScanFlowView: View {
                 let height = width*16/9
                 ZStack {
                     LiveCardPreview(camera:camera).clipShape(RoundedRectangle(cornerRadius:24))
-                    VibrantCardGuide().opacity(model.stage == .back ? 0.45:1).accessibilityHidden(true).allowsHitTesting(false)
+                    VibrantCardGuide().accessibilityHidden(true).allowsHitTesting(false)
                     if let rectangle = camera.rectangle {
                         Path { path in path.addLines(rectangle.points.map { CGPoint(x:$0.x*width,y:$0.y*height) }); path.closeSubpath() }.stroke(.cyan,lineWidth:3).shadow(color:.cyan.opacity(0.7),radius:8)
                     }
