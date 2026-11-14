@@ -73,7 +73,7 @@ enum Imaging {
                 }
                 corrected = corrected.applyingFilter("CIPerspectiveCorrection", parameters: ["inputTopLeft": point(0), "inputTopRight": point(1), "inputBottomRight": point(2), "inputBottomLeft": point(3)])
             } else if let r = rectangles.results?.first {
-                resolvedCrop = CropSelection(points:[r.topLeft,r.topRight,r.bottomRight,r.bottomLeft].map { CropPoint(x:$0.x,y:1-$0.y) })
+                resolvedCrop = CropSelection(points:[r.topLeft,r.topRight,r.bottomRight,r.bottomLeft].map { CropPoint(x:Double($0.x),y:1.0-Double($0.y)) })
                 func point(_ p: CGPoint) -> CIVector { CIVector(x: p.x * corrected.extent.width, y: p.y * corrected.extent.height) }
                 corrected = corrected.applyingFilter("CIPerspectiveCorrection", parameters: ["inputTopLeft": point(r.topLeft), "inputTopRight": point(r.topRight), "inputBottomLeft": point(r.bottomLeft), "inputBottomRight": point(r.bottomRight)])
             }
