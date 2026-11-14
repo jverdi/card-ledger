@@ -81,8 +81,8 @@ final class VibrantGuideView: UIView {
     private let vibrant: UIVisualEffectView
     private let ink = ScanGuideInk()
     private let effectMask = ScanGuideInk()
-    var reduceTransparency = false { didSet { updateEffects() } }
-    var increasedContrast = false { didSet { updateEffects() } }
+    var reduceTransparency = false { didSet { if oldValue != reduceTransparency { updateEffects() } } }
+    var increasedContrast = false { didSet { if oldValue != increasedContrast { updateEffects() } } }
     override init(frame:CGRect) {
         let effect = UIBlurEffect(style:.systemThinMaterialDark)
         blurEffect = effect
