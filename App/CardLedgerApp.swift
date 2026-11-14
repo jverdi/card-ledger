@@ -207,12 +207,30 @@ struct CardEditor: View {
                     Picker("Side", selection: $side) { Text("Front").tag("Front"); Text("Back").tag("Back") }.pickerStyle(.segmented)
                     PhotosPicker("Import photo", selection: $photo, matching: .images)
                     if UIImagePickerController.isSourceTypeAvailable(.camera) { Button("Take photo", systemImage: "camera") { camera = true } }
+                    if (side == "Front" ? card.frontOrientationUncertain : card.backOrientationUncertain) == true {
+                        Text("Orientation uncertain. Rotate this side if needed.").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Button("Rotate 90°",systemImage:"rotate.right",action:rotateSelectedSide)
+                        .disabled((side == "Front" ? card.front : card.back) == nil).accessibilityIdentifier("card.rotate")
                     Button("Adjust corners and rotation") { cropping = true }.disabled((side == "Front" ? card.front : card.back) == nil)
                     if let original = card.back { DisclosureGroup("Original back · condition photo") { PhotoView(data: original).frame(height: 350) } }
                     if let original = card.front { DisclosureGroup("Original front · condition photo") { PhotoView(data: original).frame(height: 350) } }
                     Button("Read card details with Apple Intelligence") { run { let result = try await Recognizer.identify(text: card.ocr); try Task.checkCancellation(); card.identity = result } }.disabled(card.ocr.isEmpty)
                     if !card.ocr.isEmpty { DisclosureGroup("Extracted text") { Text(card.ocr).textSelection(.enabled) } }
                 }
+    }
+    private func rotateSelectedSide() {
+        let selectedSide = side
+        guard let original = selectedSide == "Front" ? card.front : card.back else { return }
+        let selection = (selectedSide == "Front" ? card.frontCrop : card.backCrop) ?? CropSelection()
+        run {
+            let rotated = selection.rotatedClockwise(1)
+            let result = try await Imaging.process(original,crop:rotated)
+            try Task.checkCancellation()
+            if selectedSide == "Front" { card.thumbnail = result.corrected; card.frontCrop = rotated; card.frontOrientationUncertain = false }
+            else { card.backCorrected = result.corrected; card.backCrop = rotated; card.backOrientationUncertain = false }
+            card.replaceOCR(result.text,front:selectedSide == "Front")
+        }
     }
     private var identitySection: some View {
                 Section("Confirm identity") {
@@ -260,8 +278,8 @@ struct CardEditor: View {
                 run {
                     let result = try await Imaging.process(original, crop: selection)
                     try Task.checkCancellation()
-                    if selectedSide == "Front" { card.thumbnail = result.corrected; card.frontCrop = selection }
-                    else { card.backCorrected = result.corrected; card.backCrop = selection }
+                    if selectedSide == "Front" { card.thumbnail = result.corrected; card.frontCrop = selection; card.frontOrientationUncertain = false }
+                    else { card.backCorrected = result.corrected; card.backCrop = selection; card.backOrientationUncertain = false }
                     card.replaceOCR(result.text, front: selectedSide == "Front")
                 }
             }
@@ -306,8 +324,8 @@ struct CardEditor: View {
     func ingest(_ data: Data, side: String) async throws {
         let result = try await Imaging.process(data)
         try Task.checkCancellation()
-        if side == "Front" { card.front = result.original; card.thumbnail = result.corrected; card.frontCrop = nil }
-        else { card.back = result.original; card.backCorrected = result.corrected; card.backCrop = nil }
+        if side == "Front" { card.front = result.original; card.thumbnail = result.corrected; card.frontCrop = nil; card.frontOrientationUncertain = nil }
+        else { card.back = result.original; card.backCorrected = result.corrected; card.backCrop = nil; card.backOrientationUncertain = nil }
         card.replaceOCR(result.text, front: side == "Front")
     }
 }

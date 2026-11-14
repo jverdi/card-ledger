@@ -52,10 +52,14 @@ struct HolographicCard: View {
     }
     private func face(_ data: Data?, time: Double) -> some View {
         GeometryReader { geometry in
-            PhotoView(data:data).frame(width:geometry.size.width,height:geometry.size.height)
+            let imageSize = data.flatMap { UIImage(data:$0)?.size } ?? CGSize(width:5,height:7)
+            let scale = min(geometry.size.width / imageSize.width,geometry.size.height / imageSize.height)
+            let faceSize = CGSize(width:imageSize.width * scale,height:imageSize.height * scale)
+            PhotoView(data:data).frame(width:faceSize.width,height:faceSize.height)
                 .background(.black).clipShape(RoundedRectangle(cornerRadius:16))
-                .colorEffect(ShaderLibrary.cardFoil(.float2(geometry.size),.float(reduceMotion ? 0:Float(time))),isEnabled:!reduceMotion)
+                .colorEffect(ShaderLibrary.cardFoil(.float2(faceSize),.float(reduceMotion ? 0:Float(time))),isEnabled:!reduceMotion)
                 .overlay(RoundedRectangle(cornerRadius:16).stroke(.white.opacity(0.45),lineWidth:1))
+                .position(x:geometry.size.width/2,y:geometry.size.height/2)
         }
     }
 }
@@ -128,12 +132,12 @@ struct ScanFlowView: View {
                 let width = min(proxy.size.width,proxy.size.height*9/16)
                 let height = width*16/9
                 ZStack {
-                    LiveCardPreview(camera:camera)
-                    RoundedRectangle(cornerRadius:20).stroke(.white.opacity(0.25),style:StrokeStyle(lineWidth:1,dash:[8,6])).padding(.horizontal,width*0.14).padding(.vertical,height*0.14)
+                    LiveCardPreview(camera:camera).clipShape(RoundedRectangle(cornerRadius:24))
+                    VibrantCardGuide().accessibilityHidden(true).allowsHitTesting(false)
                     if let rectangle = camera.rectangle {
                         Path { path in path.addLines(rectangle.points.map { CGPoint(x:$0.x*width,y:$0.y*height) }); path.closeSubpath() }.stroke(.cyan,lineWidth:3).shadow(color:.cyan.opacity(0.7),radius:8)
                     }
-                }.frame(width:width,height:height).clipShape(RoundedRectangle(cornerRadius:24)).frame(maxWidth:.infinity,maxHeight:.infinity)
+                }.frame(width:width,height:height).frame(maxWidth:.infinity,maxHeight:.infinity)
             }.padding(.horizontal,20)
             if model.importing { ProgressView("Finding card edges…").tint(.white) }
             if let error = model.captureError ?? camera.message { Text(error).font(.caption).foregroundStyle(.white.opacity(0.8)).multilineTextAlignment(.center).padding(.horizontal) }
@@ -147,7 +151,7 @@ struct ScanFlowView: View {
                 CardCollectionRow(card:model.card,namespace:namespace).padding(18).background(.white.opacity(0.09),in:RoundedRectangle(cornerRadius:22)).padding(.horizontal,20)
             } else {
                 HolographicCard(front:model.card.thumbnail ?? model.card.front,back:model.card.backCorrected ?? model.card.back)
-                    .frame(width:230,height:322).accessibilityIdentifier("scan.cardReveal").matchedGeometryEffect(id:"photo-"+model.id.uuidString,in:namespace)
+                    .frame(width:300,height:322).accessibilityIdentifier("scan.cardReveal").matchedGeometryEffect(id:"photo-"+model.id.uuidString,in:namespace)
                 VStack(spacing:8) {
                     Text(model.player).font(.system(size:32,weight:.bold,design:.rounded)).multilineTextAlignment(.center)
                     Text(model.team).font(.title3).foregroundStyle(.cyan)

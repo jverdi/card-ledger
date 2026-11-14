@@ -15,6 +15,6 @@ platform :ios do
     args = { 'DEVELOPMENT_TEAM' => team, 'CODE_SIGN_STYLE' => 'Manual', 'CODE_SIGN_IDENTITY' => 'Apple Distribution', 'PROVISIONING_PROFILE_SPECIFIER' => profile }.map { |k, v| "#{k}=#{Shellwords.escape(v)}" }.join(' ')
     build_app(project: 'CardLedger.xcodeproj', scheme: 'CardLedger', export_method: 'app-store', output_directory: 'build', xcargs: args, export_options: { signingStyle: 'manual', teamID: team, provisioningProfiles: {'com.jverdi.cardledger' => profile} })
     sh('python3', File.expand_path('../scripts/validate-ipa.py', __dir__), lane_context[SharedValues::IPA_OUTPUT_PATH])
-    upload_to_testflight(api_key: key, app_identifier: 'com.jverdi.cardledger', skip_waiting_for_build_processing: false, distribute_external: false, changelog: 'Automatic front/back scanning with live card-edge detection, cropped two-sided 3D holographic reveal, automatic identity and pricing attempt, and animated collection insertion. Tap a saved card to edit. Live pricing requires your configured private worker.')
+    upload_to_testflight(api_key: key, app_identifier: 'com.jverdi.cardledger', skip_waiting_for_build_processing: false, distribute_external: false, changelog: 'Automatic orientation correction for each scanned card face, preserving landscape layouts and originals. New vibrant vector baseball-player and bat scanning guide with a rounded dashed card outline. Quick rotate control in card edits. Live pricing still requires your configured private worker.')
   end
 end

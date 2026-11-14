@@ -19,7 +19,7 @@ struct ScanServices {
     var minimumReveal: Double = 2
     var collapseDuration: Double = 0.65
     static func live(workerURL: String) -> Self {
-        Self(process: { try await Imaging.process($0.original, crop: $0.crop) },
+        Self(process: { try await Imaging.process($0.original, crop: $0.crop, automaticallyOrient:true) },
              identify: { try await Recognizer.identify(text: $0) },
              lookup: { try await ResearchClient.lookup($0, base: workerURL) },
              canLookup: ResearchClient.configured(base: workerURL))
@@ -80,6 +80,9 @@ struct ScanServices {
             let (f,b) = try await (frontResult,backResult)
             try Task.checkCancellation()
             card.thumbnail = f.corrected; card.backCorrected = b.corrected
+            card.frontCrop = f.crop ?? front.crop; card.backCrop = b.crop ?? back.crop
+            card.frontOrientationUncertain = f.orientationUncertain
+            card.backOrientationUncertain = b.orientationUncertain
             card.replaceOCR(f.text,front: true); card.replaceOCR(b.text,front: false)
             do {
                 let identity = try await services.identify(card.ocr)

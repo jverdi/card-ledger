@@ -5,6 +5,15 @@ struct CropSelection: Codable, Equatable {
     var quarterTurns = 0
     // Clockwise, starting at the top left, in display coordinates.
     var points = [CropPoint(x: 0, y: 0), CropPoint(x: 1, y: 0), CropPoint(x: 1, y: 1), CropPoint(x: 0, y: 1)]
+    func rotatedClockwise(_ turns: Int) -> CropSelection {
+        var result = self
+        for _ in 0..<((turns % 4 + 4) % 4) {
+            let transformed = result.points.map { CropPoint(x:1-$0.y,y:$0.x) }
+            result.points = [transformed[3],transformed[0],transformed[1],transformed[2]]
+            result.quarterTurns = (result.quarterTurns + 1) % 4
+        }
+        return result
+    }
     var valid: Bool {
         guard points.count == 4, (0...3).contains(quarterTurns), points.allSatisfy({ $0.x.isFinite && $0.y.isFinite && (0...1).contains($0.x) && (0...1).contains($0.y) }) else { return false }
         var area = 0.0
@@ -56,7 +65,7 @@ struct CropEditor: View {
                     }
                 }.padding(24)
                 HStack {
-                    Button("Rotate 90°", systemImage: "rotate.right") { selection.quarterTurns = (selection.quarterTurns + 1) % 4; selection.points = CropSelection().points }
+                    Button("Rotate 90°", systemImage: "rotate.right") { selection = selection.rotatedClockwise(1) }
                     Spacer()
                     Button("Reset") { selection = CropSelection() }
                 }.padding(.horizontal)

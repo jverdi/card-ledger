@@ -9,6 +9,7 @@ import XCTest
         XCTAssertTrue(app.buttons["collection.add"].waitForExistence(timeout:20))
         app.buttons["collection.add"].tap()
         XCTAssertTrue(app.staticTexts["Scan front of card"].waitForExistence(timeout:5))
+        let guide = XCTAttachment(screenshot:app.screenshot()); guide.name = "Vibrant vector scanning guide"; guide.lifetime = .keepAlways; add(guide)
         XCTAssertFalse(app.textFields["card.player"].exists)
         XCTAssertTrue(app.staticTexts["Scan back of card"].waitForExistence(timeout:15))
         XCTAssertTrue(app.staticTexts["UI Rookie"].waitForExistence(timeout:20))

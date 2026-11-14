@@ -4,7 +4,13 @@ import Vision
 import CoreImage
 import FoundationModels
 
-struct PhotoResult { let original: Data; let corrected: Data; let text: String }
+struct PhotoResult {
+    let original: Data
+    let corrected: Data
+    let text: String
+    var crop: CropSelection? = nil
+    var orientationUncertain = false
+}
 enum Imaging {
     static func cropJPEG(_ cg: CGImage, crop: CropSelection) throws -> Data {
         guard crop.valid else { throw CocoaError(.fileReadCorruptFile) }
@@ -15,7 +21,8 @@ enum Imaging {
         return data
     }
     static func detectCard(_ data: Data) async throws -> CapturedFace {
-        try await Task.detached {
+        let work = Task.detached {
+            try Task.checkCancellation()
             guard let source = UIImage(data: data) else { throw CocoaError(.fileReadCorruptFile) }
             let image = rotated(source, quarterTurns: 0)
             guard let cg = image.cgImage else { throw CocoaError(.fileReadCorruptFile) }
@@ -28,7 +35,10 @@ enum Imaging {
             }
             guard let rectangle = rectangles.first(where: { $0.likelyCard }) else { throw ScanFailure.noRectangle }
             return CapturedFace(original: data, crop: rectangle.crop, preview: try cropJPEG(cg,crop:rectangle.crop))
-        }.value
+        }
+        return try await withTaskCancellationHandler {
+            try await work.value
+        } onCancel: { work.cancel() }
     }
     static func rotated(_ image: UIImage, quarterTurns: Int) -> UIImage {
         let turns = ((quarterTurns % 4) + 4) % 4
@@ -40,8 +50,9 @@ enum Imaging {
             image.draw(in: CGRect(x: -image.size.width / 2, y: -image.size.height / 2, width: image.size.width, height: image.size.height))
         }
     }
-    static func process(_ data: Data, crop: CropSelection? = nil) async throws -> PhotoResult {
-        try await Task.detached {
+    static func process(_ data: Data, crop: CropSelection? = nil, automaticallyOrient: Bool = false) async throws -> PhotoResult {
+        let work = Task.detached {
+            try Task.checkCancellation()
             guard let source = UIImage(data: data), crop?.valid != false else { throw CocoaError(.fileReadCorruptFile) }
             let image = rotated(source, quarterTurns: crop?.quarterTurns ?? 0)
             let format = UIGraphicsImageRendererFormat(); format.scale = 1
@@ -65,12 +76,22 @@ enum Imaging {
                 corrected = corrected.applyingFilter("CIPerspectiveCorrection", parameters: ["inputTopLeft": point(r.topLeft), "inputTopRight": point(r.topRight), "inputBottomLeft": point(r.bottomLeft), "inputBottomRight": point(r.bottomRight)])
             }
             let context = CIContext()
-            guard let output = context.createCGImage(corrected, from: corrected.extent), let jpeg = UIImage(cgImage: output).jpegData(compressionQuality: 0.9) else { throw CocoaError(.fileWriteUnknown) }
+            guard let output = context.createCGImage(corrected, from: corrected.extent) else { throw CocoaError(.fileWriteUnknown) }
+            var displayImage = UIImage(cgImage:output)
+            let decision: OrientationDecision
+            if automaticallyOrient { decision = try CardOrientation.detect(displayImage) }
+            else { decision = OrientationDecision(quarterTurns:0,confident:true) }
+            if decision.quarterTurns != 0 { displayImage = rotated(displayImage,quarterTurns:decision.quarterTurns) }
+            try Task.checkCancellation()
+            guard let upright = displayImage.cgImage, let jpeg = displayImage.jpegData(compressionQuality:0.9) else { throw CocoaError(.fileWriteUnknown) }
             let request = VNRecognizeTextRequest(); request.recognitionLevel = .accurate
-            try VNImageRequestHandler(cgImage: output).perform([request])
+            try VNImageRequestHandler(cgImage: upright).perform([request])
             let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
-            return PhotoResult(original: data, corrected: jpeg, text: text)
-        }.value
+            return PhotoResult(original:data,corrected:jpeg,text:text,crop:crop?.rotatedClockwise(decision.quarterTurns),orientationUncertain:!decision.confident)
+        }
+        return try await withTaskCancellationHandler {
+            try await work.value
+        } onCancel: { work.cancel() }
     }
 }
 @Generable struct ExtractedIdentity {
