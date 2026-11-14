@@ -51,6 +51,23 @@ final class OrientationTests: XCTestCase {
         XCTAssertEqual(result.crop?.quarterTurns,2)
         XCTAssertFalse(result.orientationUncertain)
     }
+    func testRecoveringAnOlderPhotoKeepsItsCropDuringRotation() async throws {
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let source = card()
+        let photo = UIGraphicsImageRenderer(size:CGSize(width:1000,height:1200),format:format).image { context in
+            UIColor.darkGray.setFill(); context.fill(CGRect(x:0,y:0,width:1000,height:1200))
+            source.draw(in:CGRect(x:200,y:180,width:600,height:840))
+        }
+        let data = try XCTUnwrap(photo.pngData())
+        let recovered = try await Imaging.process(data)
+        let crop = try XCTUnwrap(recovered.crop)
+        XCTAssertTrue(crop.valid)
+        XCTAssertGreaterThan(crop.points[0].x,0.1)
+        let rotated = try await Imaging.process(data,crop:crop.rotatedClockwise(1))
+        let image = try XCTUnwrap(UIImage(data:rotated.corrected))
+        XCTAssertEqual(image.size.width/image.size.height,1.4,accuracy:0.03)
+        XCTAssertEqual(rotated.original,data)
+    }
     @MainActor func testIndependentFaceRotationSurvivesStoreAndBackup() throws {
         let url = FileManager.default.temporaryDirectory.appending(path:UUID().uuidString).appending(path:"collection.json")
         let store = CollectionStore(file:url)
