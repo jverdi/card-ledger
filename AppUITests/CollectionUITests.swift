@@ -2,6 +2,7 @@ import XCTest
 
 @MainActor final class CollectionUITests: XCTestCase {
     func testGuidedScanAndSavedCardViewerEditRemove() async throws {
+        continueAfterFailure = false
         executionTimeAllowance = 120 // Includes simulator relaunch, Vision and UI animations.
         let app = XCUIApplication()
         app.launchEnvironment["CARD_LEDGER_UI_TEST_STORE"] = UUID().uuidString

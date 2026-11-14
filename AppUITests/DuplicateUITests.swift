@@ -2,6 +2,7 @@ import XCTest
 
 @MainActor final class DuplicateUITests: XCTestCase {
     func scanDuplicate() throws -> XCUIApplication {
+        continueAfterFailure = false
         executionTimeAllowance = 120
         let app = XCUIApplication()
         app.launchEnvironment["CARD_LEDGER_UI_TEST_STORE"] = UUID().uuidString

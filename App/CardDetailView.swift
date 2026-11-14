@@ -62,7 +62,7 @@ struct CardDetailView: View {
                 }
             }
             .sheet(item:$editing) { card in CardEditor(card:card) }
-            .confirmationDialog("Remove this card?",isPresented:$removing,titleVisibility:.visible) {
+            .alert("Remove this card?",isPresented:$removing) {
                 Button("Remove card",role:.destructive,action:removeCard)
                 Button("Cancel",role:.cancel) {}
             } message: { Text("This permanently removes this card and its photos from your collection.") }
