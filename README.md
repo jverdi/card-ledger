@@ -3,7 +3,9 @@
 Personal native iPhone collection app with an optional private Codex research worker.
 
 ## Current status
-Native iOS builds and simulator tests pass, including manual photo adjustment and ownership values. All 12 Python valuation tests pass. The first signed IPA was archived and exported successfully; Apple rejected its iPad orientation metadata. The device-family setting is corrected and the exported IPA is now checked before upload. All 10 native unit tests pass, including photo checksum corruption and legacy migration. The second release stopped before upload because Fastlane resolved the IPA-check script relative to its own directory; the script path is now explicit. A new release is being validated. TestFlight availability is not yet confirmed.
+**TestFlight 0.1.0 (3) is uploaded, processed and available to the `Personal evaluation` internal testing group as of November 14, 2026.** App Store Connect shows `Testing`, one assigned build and one invited account-owner tester. A physical-device installation has not yet been observed.
+
+Release commit: `625f2b8c6790222a3a959036b594b7463529a65c`. Successful release: https://github.com/jverdi/card-ledger/actions/runs/43619223595. Verification: 10 native unit tests, one iPhone UI save/restart test, and 12 Python pricing tests pass. The signed IPA was checked for bundle `com.jverdi.cardledger`, display name `Card Ledger` and iPhone-only device family. Earlier upload issues with iPad orientation metadata and the Fastlane script path are resolved.
 
 The iPhone display name and all app screens use **Card Ledger**. Apple rejected the App Store Connect listing name because it is already in use; the temporary listing remains **Card Ledger by Verdi**. This listing conflict needs a user-selected available alternative or an Apple name claim.
 
@@ -15,7 +17,7 @@ Still required for the complete automatic workflow:
 - Direct multimodal image recognition and catalog candidate comparison. Current Apple Intelligence extraction uses OCR text, with manual fallback.
 - Durable resumable processing, large-collection memory/performance checks, and recovery UX for corrupt stores.
 - Real-device camera, crop, offline, upgrade and backup/restore testing with representative card photos.
-- Apple processing and internal tester availability must be verified before reporting the beta ready.
+- The first beta is available; complete live pricing and the remaining recognition/reliability checks before calling the entire app complete.
 
 ## Build
 On a Mac with Xcode 26+: install XcodeGen, run `xcodegen generate`, then open CardLedger.xcodeproj. App targets iOS 26 for the text Foundation Models implementation; direct image understanding requires the later SDK and capability verification.
@@ -30,7 +32,7 @@ The worker serializes requests, caps attempts at 30/day by default, caches seven
 ## TestFlight setup
 Private repository: https://github.com/jverdi/card-ledger. App bundle `com.jverdi.cardledger`, App Store Connect app `6834848908`. The Developer Program agreement is accepted. An app-specific distribution profile, distribution certificate and Developer API key have been created; all signing and API credentials are stored as encrypted repository secrets. No credentials belong in source control or the app.
 
-The manual TestFlight workflow runs Python and native tests, installs signing assets in a temporary keychain, archives, checks the exported IPA display name/bundle/device family, uploads, waits for Apple processing and removes runner signing assets. It uses a monotonic workflow run number as the build number. The `Personal evaluation` internal group contains the account owner and automatically receives builds. A successful upload alone does not prove tester availability.
+The manual TestFlight workflow runs Python and native tests, installs signing assets in a temporary keychain, archives, checks the exported IPA display name/bundle/device family, uploads, waits for Apple processing and removes runner signing assets. It uses a monotonic workflow run number as the build number. The `Personal evaluation` internal group contains the account owner and automatically receives builds. Build 3 has been verified in that group with Testing status; the owner is Invited. The temporary local signing copies have been removed after successful upload; the encrypted CI secrets remain configured.
 
 Required encrypted secrets: APPLE_TEAM_ID, PROFILE_NAME, ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8_BASE64, BUILD_CERTIFICATE_BASE64, BUILD_CERTIFICATE_PASSWORD, BUILD_PROVISION_PROFILE_BASE64. Refresh them through secure setup, never chat. Upstream Codex credentials are separate and are not configured by signing setup.
 
