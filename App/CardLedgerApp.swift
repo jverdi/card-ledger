@@ -90,7 +90,7 @@ struct CardEditor: View {
             Form {
                 Section("Photographs") {
                     HStack { PhotoView(data: card.thumbnail ?? card.front); PhotoView(data: card.back) }.frame(height: 220)
-                    Picker("Side", selection: $side) { Text("Front"); Text("Back") }.pickerStyle(.segmented)
+                    Picker("Side", selection: $side) { Text("Front").tag("Front"); Text("Back").tag("Back") }.pickerStyle(.segmented)
                     PhotosPicker("Import photo", selection: $photo, matching: .images)
                     if UIImagePickerController.isSourceTypeAvailable(.camera) { Button("Take photo", systemImage: "camera") { camera = true } }
                     if let original = card.front { DisclosureGroup("Original front · condition photo") { PhotoView(data: original).frame(height: 350) } }
@@ -154,6 +154,10 @@ struct CardEditor: View {
                     run { if let data = try await value?.loadTransferable(type: Data.self) { try await ingest(data, side: selectedSide) } }
                 }
                 .onChange(of: card.status) { _, value in card.dispositionDate = value == "Owned" ? nil : Date() }
+                .onChange(of: card.identity.details) { _, _ in
+                    card.identity.confirmed = false
+                    card.research = nil
+                }
                 .sheet(isPresented: $camera) { Camera { data in let selectedSide = side; run { try await ingest(data, side: selectedSide) } } }
                 .alert("Card Ledger", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) { Button("OK") { message = nil } } message: { Text(message ?? "") }
                 .confirmationDialog("Permanently delete this card and its photos?", isPresented: $deleting, titleVisibility: .visible) { Button("Delete", role: .destructive) { do { try store.delete(card.id); dismiss() } catch { message = error.localizedDescription } } }
@@ -166,8 +170,7 @@ struct CardEditor: View {
     func ingest(_ data: Data, side: String) async throws {
         let result = try await Imaging.process(data)
         if side == "Front" { card.front = result.original; card.thumbnail = result.corrected } else { card.back = result.original }
-        card.ocr += "\n\(side):\n" + result.text
-        card.identity.confirmed = false
+        card.replaceOCR(result.text, front: side == "Front")
     }
 }
 struct SettingsView: View {

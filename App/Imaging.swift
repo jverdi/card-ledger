@@ -1,4 +1,5 @@
 import UIKit
+import SwiftUI
 import Vision
 import CoreImage
 import FoundationModels

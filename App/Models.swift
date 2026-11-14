@@ -14,6 +14,7 @@ struct Identity: Codable, Equatable {
     var certificate = ""
     var confirmed = false
     var title: String { [year, player, set, number].filter { !$0.isEmpty }.joined(separator: " · ") }
+    var details: Identity { var result = self; result.confirmed = false; return result }
 }
 struct Observation: Codable, Identifiable {
     var id: String { source_url + (sale_date ?? "") + String(amount ?? 0) }
@@ -61,6 +62,14 @@ struct Card: Codable, Identifiable {
     var thumbnail: Data?
     var ocr = ""
     var research: Research?
+    var frontOCR: String?
+    var backOCR: String?
+    mutating func replaceOCR(_ text: String, front: Bool) {
+        if front { frontOCR = text } else { backOCR = text }
+        ocr = "Front:\n" + (frontOCR ?? "") + "\nBack:\n" + (backOCR ?? "")
+        identity.confirmed = false
+        research = nil
+    }
 }
 struct Archive: Codable { var version = 1; var cards: [Card] }
 

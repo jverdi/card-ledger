@@ -27,4 +27,15 @@ import XCTest
         let card = Card()
         XCTAssertThrowsError(try CollectionStore.validate(Archive(cards:[card,card])))
     }
+    func testRetakingPhotoReplacesOnlyThatSidesText() {
+        var card = Card()
+        card.replaceOCR("Old front", front: true)
+        card.replaceOCR("Back label", front: false)
+        card.identity.confirmed = true
+        card.replaceOCR("New front", front: true)
+        XCTAssertFalse(card.ocr.contains("Old front"))
+        XCTAssertTrue(card.ocr.contains("New front"))
+        XCTAssertTrue(card.ocr.contains("Back label"))
+        XCTAssertFalse(card.identity.confirmed)
+    }
 }
