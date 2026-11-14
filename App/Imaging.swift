@@ -65,6 +65,7 @@ enum Imaging {
             let handler = VNImageRequestHandler(cgImage: cg)
             if crop == nil { try handler.perform([rectangles]) }
             var corrected = CIImage(cgImage: cg)
+            var resolvedCrop = crop ?? CropSelection()
             if let crop {
                 func point(_ index: Int) -> CIVector {
                     let p = crop.points[index]
@@ -72,6 +73,7 @@ enum Imaging {
                 }
                 corrected = corrected.applyingFilter("CIPerspectiveCorrection", parameters: ["inputTopLeft": point(0), "inputTopRight": point(1), "inputBottomRight": point(2), "inputBottomLeft": point(3)])
             } else if let r = rectangles.results?.first {
+                resolvedCrop = CropSelection(points:[r.topLeft,r.topRight,r.bottomRight,r.bottomLeft].map { CropPoint(x:$0.x,y:1-$0.y) })
                 func point(_ p: CGPoint) -> CIVector { CIVector(x: p.x * corrected.extent.width, y: p.y * corrected.extent.height) }
                 corrected = corrected.applyingFilter("CIPerspectiveCorrection", parameters: ["inputTopLeft": point(r.topLeft), "inputTopRight": point(r.topRight), "inputBottomLeft": point(r.bottomLeft), "inputBottomRight": point(r.bottomRight)])
             }
@@ -87,7 +89,7 @@ enum Imaging {
             let request = VNRecognizeTextRequest(); request.recognitionLevel = .accurate
             try VNImageRequestHandler(cgImage: upright).perform([request])
             let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
-            return PhotoResult(original:data,corrected:jpeg,text:text,crop:crop?.rotatedClockwise(decision.quarterTurns),orientationUncertain:!decision.confident)
+            return PhotoResult(original:data,corrected:jpeg,text:text,crop:resolvedCrop.rotatedClockwise(decision.quarterTurns),orientationUncertain:!decision.confident)
         }
         return try await withTaskCancellationHandler {
             try await work.value

@@ -222,8 +222,11 @@ struct CardEditor: View {
     private func rotateSelectedSide() {
         let selectedSide = side
         guard let original = selectedSide == "Front" ? card.front : card.back else { return }
-        let selection = (selectedSide == "Front" ? card.frontCrop : card.backCrop) ?? CropSelection()
+        let savedCrop = selectedSide == "Front" ? card.frontCrop : card.backCrop
         run {
+            let selection: CropSelection
+            if let savedCrop { selection = savedCrop }
+            else { selection = try await Imaging.process(original).crop ?? CropSelection() }
             let rotated = selection.rotatedClockwise(1)
             let result = try await Imaging.process(original,crop:rotated)
             try Task.checkCancellation()
@@ -324,8 +327,8 @@ struct CardEditor: View {
     func ingest(_ data: Data, side: String) async throws {
         let result = try await Imaging.process(data)
         try Task.checkCancellation()
-        if side == "Front" { card.front = result.original; card.thumbnail = result.corrected; card.frontCrop = nil; card.frontOrientationUncertain = nil }
-        else { card.back = result.original; card.backCorrected = result.corrected; card.backCrop = nil; card.backOrientationUncertain = nil }
+        if side == "Front" { card.front = result.original; card.thumbnail = result.corrected; card.frontCrop = result.crop; card.frontOrientationUncertain = nil }
+        else { card.back = result.original; card.backCorrected = result.corrected; card.backCrop = result.crop; card.backOrientationUncertain = nil }
         card.replaceOCR(result.text, front: side == "Front")
     }
 }

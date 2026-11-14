@@ -40,8 +40,10 @@ enum CardOrientation {
             var candidate = OrientationEvidence(quarterTurns:turns)
             for observation in request.results ?? [] {
                 guard let text = observation.topCandidates(1).first, text.confidence >= 0.65 else { continue }
-                let count = text.string.filter { $0.isLetter }.count
-                guard count >= 3 else { continue }
+                let letters = text.string.filter { $0.isLetter }
+                let count = letters.count
+                let latin = letters.folding(options:.diacriticInsensitive,locale:Locale(identifier:"en_US_POSIX"))
+                guard count >= 3, latin.unicodeScalars.allSatisfy({ (65...90).contains(Int($0.value)) || (97...122).contains(Int($0.value)) }) else { continue }
                 // Vision may read rotated text. Compare the first and last words' positions
                 // so successfully recognizing upside-down text is not mistaken for upright.
                 let string = text.string
