@@ -65,6 +65,7 @@ struct HolographicCard: View {
 }
 
 struct ScanFlowView: View {
+    @EnvironmentObject private var store: CollectionStore
     @ObservedObject var model: ScanFlowModel
     let namespace: Namespace.ID
     let onCancel: () -> Void
@@ -76,6 +77,8 @@ struct ScanFlowView: View {
     @State private var choosingPhoto = false
     @State private var loadingPhoto = false
     @State private var discard = false
+    @State private var duplicateReview = false
+    private var duplicates: [Card] { CardDuplicates.matches(for:model.card,in:store.cards) }
     @State private var showIdentity = false
     private var compact: Bool { model.stage == .compact || model.stage == .ready }
     var body: some View {
@@ -126,6 +129,12 @@ struct ScanFlowView: View {
                 }
             }
             .onChange(of:model.importing) { _,busy in if !busy && model.scanning && !choosingPhoto { startCamera() } }
+            .sheet(isPresented:$duplicateReview) {
+                DuplicateScanReview(matches:duplicates,
+                    addDuplicate:{ duplicateReview = false; model.continueToCollection() },
+                    overwrite:{ id in duplicateReview = false; model.continueToCollection(replacing:id) },
+                    discard:{ duplicateReview = false; close() })
+            }
             .confirmationDialog("Discard this scan?",isPresented:$discard,titleVisibility:.visible) { Button("Discard scan",role:.destructive,action:close); Button("Keep scanning",role:.cancel) {} }
     }
     private var captureScreen: some View {
@@ -209,13 +218,20 @@ struct ScanFlowView: View {
                         ProgressView().tint(.cyan)
                         Text("Finding comparable sales").font(.caption).foregroundStyle(.white.opacity(0.6)).accessibilityIdentifier("scan.priceLoading")
                     } else if model.canContinue {
-                        Button("Continue",action:model.continueToCollection)
+                        if !duplicates.isEmpty {
+                            Label("Already in your collection",systemImage:"rectangle.on.rectangle")
+                                .font(.subheadline).foregroundStyle(.orange).accessibilityIdentifier("scan.duplicate.notice")
+                        }
+                        Button("Continue") {
+                            if duplicates.isEmpty { model.continueToCollection() }
+                            else { duplicateReview = true }
+                        }
                             .font(.headline).buttonStyle(.borderedProminent).tint(.cyan).foregroundStyle(.black)
                             .controlSize(.large).accessibilityIdentifier("scan.continue")
                     }
                 }.frame(minHeight:55)
             }
-            if let error = model.saveError { Text(error).font(.caption); Button("Retry saving") { onCommit(model.card) }.buttonStyle(.borderedProminent) }
+            if let error = model.saveError { Text(error).font(.caption); Button("Retry saving") { onCommit(model.card) }.buttonStyle(.borderedProminent); Button("Review save options",action:model.reviewSaveOptions) }
             Spacer()
         }.padding(.horizontal,12)
     }
@@ -245,6 +261,7 @@ struct ScanFlowView: View {
 
 #if DEBUG
 enum ScanFixture {
+    static var identity: Identity { Identity(player:"UI Rookie",team:"Brooklyn",year:"2026",manufacturer:"Test Brand",set:"Test Set",number:"1",variant:"Base",grade:"Raw") }
     static func image(label:String) -> Data {
         UIGraphicsImageRenderer(size:CGSize(width:600,height:900)).image { context in
             UIColor.darkGray.setFill(); context.fill(CGRect(x:0,y:0,width:600,height:900))

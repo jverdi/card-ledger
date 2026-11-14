@@ -7,7 +7,16 @@ import UniformTypeIdentifiers
     init() {
         #if DEBUG
         if let testStore = ProcessInfo.processInfo.environment["CARD_LEDGER_UI_TEST_STORE"], UUID(uuidString: testStore) != nil {
-            _store = StateObject(wrappedValue: CollectionStore(file: URL.applicationSupportDirectory.appending(path: "CardLedgerUITests/" + testStore + "/collection.json")))
+            let file = URL.applicationSupportDirectory.appending(path:"CardLedgerUITests/"+testStore+"/collection.json")
+            let fresh = !FileManager.default.fileExists(atPath:file.path)
+            let store = CollectionStore(file:file)
+            if fresh && ProcessInfo.processInfo.environment["CARD_LEDGER_DUPLICATE_FIXTURE"] == "1" {
+                var card = Card(); card.identity = ScanFixture.identity
+                card.front = ScanFixture.image(label:"EXISTING FRONT"); card.back = ScanFixture.image(label:"EXISTING BACK")
+                card.notes = "Keep these notes"; card.manualValue = 12.34; card.location = "Binder A"
+                try? store.save(card)
+            }
+            _store = StateObject(wrappedValue:store)
             return
         }
         #endif
@@ -56,6 +65,7 @@ struct CollectionView: View {
                     .transition(.opacity).zIndex(2)
             }
         }
+        .fullScreenCover(item:$viewing) { card in CardDetailView(cardID:card.id).environmentObject(store) }
     }
     private var collectionContent: some View {
         NavigationStack {
@@ -84,8 +94,8 @@ struct CollectionView: View {
                 if visible.isEmpty { ContentUnavailableView("Your collection starts here", systemImage: "rectangle.stack", description: Text("Tap + to photograph or add a card.")) }
                 ForEach(visible) { card in
                     Button { viewing = card } label: {
-                        CardCollectionRow(card:card,namespace:scanFlight)
-                    }.foregroundStyle(.primary).id(card.id).accessibilityIdentifier("card.row." + card.id.uuidString)
+                        CardCollectionRow(card:card,namespace:scanFlight).contentShape(Rectangle())
+                    }.buttonStyle(.plain).foregroundStyle(.primary).id(card.id).accessibilityIdentifier("card.row." + card.id.uuidString)
                 }
             }.navigationTitle("Card Ledger").searchable(text: $query, prompt: "Player, team, set, tag or location")
                 .toolbar {
@@ -93,19 +103,18 @@ struct CollectionView: View {
                     ToolbarItem(placement: .topBarTrailing) { Button("Add card", systemImage: "plus", action:startScan).accessibilityIdentifier("collection.add") }
                 }
                 .onChange(of: inserted) { _,id in if let id { withAnimation(.spring(response:0.65,dampingFraction:0.88)) { proxy.scrollTo(id,anchor:.center) } } }
-                .fullScreenCover(item: $viewing) { card in CardDetailView(cardID:card.id) }
                 .sheet(isPresented: $settings) { SettingsView() }
                 .alert("Collection error", isPresented: Binding(get: { store.error != nil }, set: { if !$0 { store.error = nil } })) { Button("OK") { store.error = nil } } message: { Text(store.error ?? "") }
             }
         }
     }
     private func startScan() {
-        filtersExpanded = false
+        filtersExpanded = false; inserted = nil
         query = ""; status = "Owned"; sport = "All sports"; year = "All years"; grading = "All grades"; tag = ""; availability = "All values"; sort = "Newest"
         var services = ScanServices.live(workerURL:UserDefaults.standard.string(forKey:"workerURL") ?? "")
         #if DEBUG
         if ProcessInfo.processInfo.environment["CARD_LEDGER_SCAN_FIXTURE"] == "1" {
-            services.identify = { _ in Identity(player:"UI Rookie",team:"Brooklyn",year:"2026",manufacturer:"Test Brand",set:"Test Set",number:"1",variant:"Base",grade:"Raw") }
+            services.identify = { _ in ScanFixture.identity }
             services.canLookup = false
             services.minimumReveal = 6 // Give UI automation time to inspect the animated reveal.
         }
@@ -115,7 +124,8 @@ struct CollectionView: View {
     private func finishScan(_ card: Card) {
         do {
             try withAnimation(.spring(response:0.7,dampingFraction:0.88)) {
-                try store.save(card); scan = nil; inserted = card.id
+                let saved = try store.saveScan(card,replacing:scan?.replacingCardID)
+                scan = nil; status = saved.status; inserted = saved.id
             }
             UINotificationFeedbackGenerator().notificationOccurred(.success)
         } catch { scan?.saveError = "Your scan is ready, but could not be saved. " + error.localizedDescription }

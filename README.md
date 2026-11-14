@@ -49,6 +49,8 @@ Both detected rectangles are perspective-corrected. Each face is independently e
 
 The scanning overlay combines a custom vector baseball-player bust and shoulder bat with a dashed, subtly rounded 2.5:3.5 card outline. UIKit blur and vibrancy are masked to the vector strokes so the camera view remains sharp. A dark contrast stroke, Increase Contrast support and a Reduce Transparency fallback keep the guide legible.
 
+Exact duplicate detection compares normalized player, sport, year, manufacturer, set, card number, explicit variant and grade, plus certificate when present. Conflicting nonempty teams also prevent a match. Missing or unknown required fields do not establish an exact match, and images alone are not treated as proof of matching editions. A match notice appears in the completed spinning view. Continue opens Add duplicate / Overwrite existing / Discard scan choices. Multiple matches require explicitly selecting a copy before overwrite. Adding saves a new UUID; overwriting keeps the selected UUID, original added date, status, notes, tags, location, purchase/disposition history and manual valuation while replacing scan-derived fields. The match is revalidated at commit, and failed saves offer a return to the review choices. Discard never mutates the collection.
+
 Photo-library fallback follows the same front/back sequence and requires a complete detected rectangle. Cancellation stops later insertion. Original evidence is preserved separately from corrected display copies. Reduce Motion disables continuous rotation and shader animation.
 
 ## Evaluation checklist

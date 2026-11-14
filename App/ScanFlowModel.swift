@@ -30,6 +30,7 @@ struct ScanServices {
 @MainActor final class ScanFlowModel: ObservableObject, Identifiable {
     enum Stage: Equatable { case front, frontCaptured, back, identifying, revealing, review, compact, ready }
     let id: UUID
+    @Published private(set) var replacingCardID: UUID?
     @Published private(set) var card: Card
     @Published private(set) var stage: Stage = .front
     @Published private(set) var showPriceSpinner = false
@@ -140,8 +141,9 @@ struct ScanServices {
             stage = .review
         } catch { }
     }
-    func continueToCollection() {
+    func continueToCollection(replacing id: UUID? = nil) {
         guard canContinue else { return }
+        replacingCardID = id
         // Change synchronously so repeated taps cannot enqueue another insertion.
         withAnimation(.spring(duration:services.collapseDuration,bounce:0.12)) { stage = .compact }
         task = Task {
@@ -152,6 +154,10 @@ struct ScanServices {
                 stage = .ready
             } catch { }
         }
+    }
+    func reviewSaveOptions() {
+        guard !cancelled, stage == .ready else { return }
+        saveError = nil; replacingCardID = nil; stage = .review
     }
     func cancel() { cancelled = true; task?.cancel(); spinner?.cancel(); confirmation?.cancel(); pricePending = false; showPriceSpinner = false }
 }
