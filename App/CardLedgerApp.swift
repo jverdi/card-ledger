@@ -3,7 +3,16 @@ import PhotosUI
 import UniformTypeIdentifiers
 
 @main struct CardLedgerApp: App {
-    @StateObject var store = CollectionStore()
+    @StateObject var store: CollectionStore
+    init() {
+        #if DEBUG
+        if let testStore = ProcessInfo.processInfo.environment["CARD_LEDGER_UI_TEST_STORE"], UUID(uuidString: testStore) != nil {
+            _store = StateObject(wrappedValue: CollectionStore(file: URL.applicationSupportDirectory.appending(path: "CardLedgerUITests/" + testStore + "/collection.json")))
+            return
+        }
+        #endif
+        _store = StateObject(wrappedValue: CollectionStore())
+    }
     var body: some Scene { WindowGroup { CollectionView().environmentObject(store).tint(.indigo) } }
 }
 struct CollectionView: View {
@@ -75,7 +84,7 @@ struct CollectionView: View {
             }.navigationTitle("Card Ledger").searchable(text: $query, prompt: "Player, team, set, tag or location")
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) { Button("Settings", systemImage: "gearshape") { settings = true } }
-                    ToolbarItem(placement: .topBarTrailing) { Button("Add card", systemImage: "plus") { editing = Card() } }
+                    ToolbarItem(placement: .topBarTrailing) { Button("Add card", systemImage: "plus") { editing = Card() }.accessibilityIdentifier("collection.add") }
                 }
                 .sheet(item: $editing) { card in CardEditor(card: card) }
                 .sheet(isPresented: $settings) { SettingsView() }
@@ -122,7 +131,7 @@ struct CardEditor: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(busy) }
-                ToolbarItem(placement: .confirmationAction) { Button("Save", action: saveCard).disabled(busy) }
+                ToolbarItem(placement: .confirmationAction) { Button("Save", action: saveCard).disabled(busy).accessibilityIdentifier("card.save") }
             }
     }
     private var mediaContent: some View {
@@ -178,7 +187,7 @@ struct CardEditor: View {
     }
     private var identitySection: some View {
                 Section("Confirm identity") {
-                    TextField("Player / card name", text: $card.identity.player)
+                    TextField("Player / card name", text: $card.identity.player).accessibilityIdentifier("card.player")
                     TextField("Team printed on card", text: $card.identity.team)
                     TextField("Sport", text: $card.identity.sport)
                     TextField("Year / season", text: $card.identity.year)

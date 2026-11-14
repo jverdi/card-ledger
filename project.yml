@@ -27,7 +27,7 @@ targets:
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
     scheme:
-      testTargets: [CardLedgerTests]
+      testTargets: [CardLedgerTests, CardLedgerUITests]
   CardLedgerTests:
     type: bundle.unit-test
     platform: iOS
@@ -37,3 +37,13 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
+  CardLedgerUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [AppUITests]
+    dependencies:
+      - target: CardLedger
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: '1'
