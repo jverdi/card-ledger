@@ -57,6 +57,7 @@ struct CaptureGate {
 struct CapturedFace {
     let original: Data
     let crop: CropSelection
+    var preview: Data? = nil
 }
 
 final class AutoScanCamera: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate {
@@ -142,11 +143,11 @@ final class AutoScanCamera: NSObject, ObservableObject, AVCaptureVideoDataOutput
             let rectangle = candidates.first(where: { $0.likelyCard })
             let currentGeneration = generation
             DispatchQueue.main.async { [weak self] in self?.rectangle = rectangle }
-            if gate.observe(rectangle, at: now, focused: device?.isAdjustingFocus != true), let rectangle {
+            if gate.observe(rectangle, at: now, focused: device?.isAdjustingFocus != true && device?.isAdjustingExposure != true), let rectangle {
                 guard let cg = context.createCGImage(CIImage(cvPixelBuffer: buffer), from: CGRect(origin: .zero,size:size)),
                       let data = UIImage(cgImage: cg).jpegData(compressionQuality: 0.95) else { gate.reset(); return }
                 enabled = false
-                let face = CapturedFace(original: data, crop: rectangle.crop)
+                let face = CapturedFace(original: data, crop: rectangle.crop, preview: try? Imaging.cropJPEG(cg, crop: rectangle.crop))
                 // Exactly the detected frame and corners are captured; no second moving-frame exposure.
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }

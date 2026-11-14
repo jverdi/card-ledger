@@ -36,6 +36,7 @@ struct ScanServices {
     @Published var captureError: String?
     @Published var saveError: String?
     @Published private(set) var importing = false
+    private var cancelled = false
     private var front: CapturedFace?
     private var back: CapturedFace?
     private var task: Task<Void, Never>?
@@ -47,19 +48,19 @@ struct ScanServices {
 
     init(services: ScanServices) { let card = Card(); self.card = card; id = card.id; self.services = services }
     func receive(_ face: CapturedFace) {
-        guard scanning, face.crop.valid else { return }
+        guard !cancelled, scanning, face.crop.valid else { return }
         captureError = nil
         if stage == .front {
-            front = face; card.front = face.original; card.frontCrop = face.crop
+            front = face; card.front = face.original; card.frontCrop = face.crop; card.thumbnail = face.preview
             withAnimation(.easeInOut(duration: 0.3)) { stage = .back }
         } else {
-            back = face; card.back = face.original; card.backCrop = face.crop
+            back = face; card.back = face.original; card.backCrop = face.crop; card.backCorrected = face.preview
             stage = .identifying
             task = Task { await analyze() }
         }
     }
     func importPhoto(_ data: Data) {
-        guard scanning, !importing else { return }
+        guard !cancelled, scanning, !importing else { return }
         importing = true
         task = Task {
             do {
@@ -127,7 +128,7 @@ struct ScanServices {
             stage = .ready
         } catch { }
     }
-    func cancel() { task?.cancel(); spinner?.cancel(); pricePending = false; showPriceSpinner = false }
+    func cancel() { cancelled = true; task?.cancel(); spinner?.cancel(); pricePending = false; showPriceSpinner = false }
 }
 
 extension Identity {

@@ -30,6 +30,7 @@ struct CollectionView: View {
     @State private var scan: ScanFlowModel?
     @Namespace private var scanFlight
     @State private var inserted: UUID?
+    @State private var filtersExpanded = false
     var visible: [Card] {
         store.cards.filter { card in
             (status == "All" || card.status == status) && (sport == "All sports" || card.identity.sport == sport) &&
@@ -72,7 +73,7 @@ struct CollectionView: View {
                     Picker("Status", selection: $status) { ForEach(["Owned", "Sold", "Gifted", "All"], id: \.self) { Text($0) } }
                     Picker("Sport", selection: $sport) { ForEach(["All sports"] + Array(Set(store.cards.map { $0.identity.sport })).sorted(), id: \.self) { Text($0) } }
                     Picker("Sort", selection: $sort) { ForEach(["Newest", "Name", "Year", "Value"], id: \.self) { Text($0) } }
-                    DisclosureGroup("More filters") {
+                    DisclosureGroup("More filters",isExpanded:$filtersExpanded) {
                         Picker("Year", selection: $year) { ForEach(["All years"] + Array(Set(store.cards.map { $0.identity.year }.filter { !$0.isEmpty })).sorted(), id: \.self) { Text($0) } }
                         Picker("Grade", selection: $grading) { ForEach(["All grades", "Raw", "Graded"], id: \.self) { Text($0) } }
                         Picker("Value", selection: $availability) { ForEach(["All values", "Valued", "Not valued"], id: \.self) { Text($0) } }
@@ -99,6 +100,7 @@ struct CollectionView: View {
         }
     }
     private func startScan() {
+        filtersExpanded = false
         query = ""; status = "Owned"; sport = "All sports"; year = "All years"; grading = "All grades"; tag = ""; availability = "All values"; sort = "Newest"
         var services = ScanServices.live(workerURL:UserDefaults.standard.string(forKey:"workerURL") ?? "")
         #if DEBUG

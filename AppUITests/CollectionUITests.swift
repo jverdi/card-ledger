@@ -11,6 +11,8 @@ import XCTest
         XCTAssertTrue(app.staticTexts["Scan front of card"].waitForExistence(timeout:5))
         XCTAssertFalse(app.textFields["card.player"].exists)
         XCTAssertTrue(app.staticTexts["Scan back of card"].waitForExistence(timeout:8))
+        XCTAssertTrue(app.staticTexts["UI Rookie"].waitForExistence(timeout:20))
+        let reveal = XCTAttachment(screenshot:app.screenshot()); reveal.name = "Two-sided holographic reveal"; reveal.lifetime = .keepAlways; add(reveal)
         let row = app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","card.row.")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout:30))
         row.tap()

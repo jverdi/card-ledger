@@ -36,7 +36,7 @@ final class CaptureGateTests: XCTestCase {
         },lookup:lookup,canLookup:true,revealDuration:0.02,spinnerDelay:0.05,minimumReveal:0.04,collapseDuration:0.01)
     }
     func feed(_ model:ScanFlowModel) { model.receive(CapturedFace(original:Data([1]),crop:CropSelection())); XCTAssertEqual(model.stage,.back); model.receive(CapturedFace(original:Data([2]),crop:CropSelection())) }
-    func waitUntil(_ predicate: () -> Bool) async throws {
+    func waitUntil(_ predicate: @escaping () -> Bool) async throws {
         for _ in 0..<100 { if predicate() { return }; try await Task.sleep(for:.milliseconds(10)) }
         XCTFail("Flow did not reach expected state")
     }

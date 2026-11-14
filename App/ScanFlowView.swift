@@ -54,7 +54,7 @@ struct HolographicCard: View {
         GeometryReader { geometry in
             PhotoView(data:data).frame(width:geometry.size.width,height:geometry.size.height)
                 .background(.black).clipShape(RoundedRectangle(cornerRadius:16))
-                .colorEffect(ShaderLibrary.cardFoil(.float2(SIMD2<Float>(Float(geometry.size.width),Float(geometry.size.height))),.float(reduceMotion ? 0:Float(time))),isEnabled:!reduceMotion)
+                .colorEffect(ShaderLibrary.cardFoil(.float2(geometry.size),.float(reduceMotion ? 0:Float(time))),isEnabled:!reduceMotion)
                 .overlay(RoundedRectangle(cornerRadius:16).stroke(.white.opacity(0.45),lineWidth:1))
         }
     }
@@ -69,6 +69,8 @@ struct ScanFlowView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var photo: PhotosPickerItem?
+    @State private var choosingPhoto = false
+    @State private var loadingPhoto = false
     @State private var discard = false
     @State private var showIdentity = false
     private var compact: Bool { model.stage == .compact || model.stage == .ready }
@@ -95,12 +97,22 @@ struct ScanFlowView: View {
                 if stage == .ready { onCommit(model.card) }
             }
             .onChange(of:scenePhase) { _,phase in
-                if phase == .active && model.scanning { camera.start() } else { camera.suspend() }
+                if phase == .active && model.scanning && !choosingPhoto && !loadingPhoto && !model.importing { camera.start() } else { camera.suspend() }
+            }
+            .photosPicker(isPresented:$choosingPhoto,selection:$photo,matching:.images)
+            .onChange(of:choosingPhoto) { _,open in
+                if open { camera.suspend() }
+                else if photo == nil { loadingPhoto = false; if model.scanning { camera.start() } }
             }
             .onChange(of:photo) { _,item in
                 guard let item else { return }
-                Task { if let data = try? await item.loadTransferable(type:Data.self) { model.importPhoto(data) } }
+                Task {
+                    if let data = try? await item.loadTransferable(type:Data.self) { model.importPhoto(data) }
+                    else { model.captureError = "That photo could not be opened. Please choose another."; if model.scanning { camera.start() } }
+                    loadingPhoto = false
+                }
             }
+            .onChange(of:model.importing) { _,busy in if !busy && model.scanning && !choosingPhoto { camera.start() } }
             .confirmationDialog("Discard this scan?",isPresented:$discard,titleVisibility:.visible) { Button("Discard scan",role:.destructive,action:close); Button("Keep scanning",role:.cancel) {} }
     }
     private var captureScreen: some View {
@@ -125,7 +137,7 @@ struct ScanFlowView: View {
             }.padding(.horizontal,20)
             if model.importing { ProgressView("Finding card edges…").tint(.white) }
             if let error = model.captureError ?? camera.message { Text(error).font(.caption).foregroundStyle(.white.opacity(0.8)).multilineTextAlignment(.center).padding(.horizontal) }
-            PhotosPicker(selection:$photo,matching:.images) { Label("Use a photo instead",systemImage:"photo.on.rectangle").font(.subheadline) }.disabled(model.importing).padding(.bottom,24)
+            Button { photo = nil; loadingPhoto = true; camera.suspend(); choosingPhoto = true } label: { Label("Use a photo instead",systemImage:"photo.on.rectangle").font(.subheadline) }.disabled(model.importing || loadingPhoto).padding(.bottom,24)
         }
     }
     private var revealScreen: some View {
@@ -156,7 +168,7 @@ struct ScanFlowView: View {
         }.padding(.horizontal,12)
     }
     private func setupCamera() {
-        camera.onCapture = { face in guard model.scanning, !model.importing else { return }; model.receive(face) }
+        camera.onCapture = { face in guard model.scanning, !model.importing, !loadingPhoto else { return }; model.receive(face) }
         #if DEBUG
         if ProcessInfo.processInfo.environment["CARD_LEDGER_SCAN_FIXTURE"] == "1" {
             Task {

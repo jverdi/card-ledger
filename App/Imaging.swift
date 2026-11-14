@@ -6,6 +6,14 @@ import FoundationModels
 
 struct PhotoResult { let original: Data; let corrected: Data; let text: String }
 enum Imaging {
+    static func cropJPEG(_ cg: CGImage, crop: CropSelection) throws -> Data {
+        guard crop.valid else { throw CocoaError(.fileReadCorruptFile) }
+        let image = CIImage(cgImage: cg)
+        func point(_ index: Int) -> CIVector { let p = crop.points[index]; return CIVector(x:p.x * image.extent.width,y:(1-p.y) * image.extent.height) }
+        let corrected = image.applyingFilter("CIPerspectiveCorrection",parameters:["inputTopLeft":point(0),"inputTopRight":point(1),"inputBottomRight":point(2),"inputBottomLeft":point(3)])
+        guard let output = CIContext().createCGImage(corrected,from:corrected.extent), let data = UIImage(cgImage:output).jpegData(compressionQuality:0.9) else { throw CocoaError(.fileWriteUnknown) }
+        return data
+    }
     static func detectCard(_ data: Data) async throws -> CapturedFace {
         try await Task.detached {
             guard let source = UIImage(data: data) else { throw CocoaError(.fileReadCorruptFile) }
@@ -19,7 +27,7 @@ enum Imaging {
                 CardRectangle(points: [r.topLeft,r.topRight,r.bottomRight,r.bottomLeft].map { CGPoint(x: $0.x,y: 1-$0.y) }, confidence: r.confidence, pixelSize: size)
             }
             guard let rectangle = rectangles.first(where: { $0.likelyCard }) else { throw ScanFailure.noRectangle }
-            return CapturedFace(original: data, crop: rectangle.crop)
+            return CapturedFace(original: data, crop: rectangle.crop, preview: try cropJPEG(cg,crop:rectangle.crop))
         }.value
     }
     static func rotated(_ image: UIImage, quarterTurns: Int) -> UIImage {
