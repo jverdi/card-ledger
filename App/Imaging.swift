@@ -6,9 +6,20 @@ import FoundationModels
 
 struct PhotoResult { let original: Data; let corrected: Data; let text: String }
 enum Imaging {
-    static func process(_ data: Data) async throws -> PhotoResult {
+    static func rotated(_ image: UIImage, quarterTurns: Int) -> UIImage {
+        let turns = ((quarterTurns % 4) + 4) % 4
+        let size = turns % 2 == 0 ? image.size : CGSize(width: image.size.height, height: image.size.width)
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).image { context in
+            context.cgContext.translateBy(x: size.width / 2, y: size.height / 2)
+            context.cgContext.rotate(by: CGFloat(turns) * .pi / 2)
+            image.draw(in: CGRect(x: -image.size.width / 2, y: -image.size.height / 2, width: image.size.width, height: image.size.height))
+        }
+    }
+    static func process(_ data: Data, crop: CropSelection? = nil) async throws -> PhotoResult {
         try await Task.detached {
-            guard let image = UIImage(data: data) else { throw CocoaError(.fileReadCorruptFile) }
+            guard let source = UIImage(data: data), crop?.valid != false else { throw CocoaError(.fileReadCorruptFile) }
+            let image = rotated(source, quarterTurns: crop?.quarterTurns ?? 0)
             let format = UIGraphicsImageRendererFormat(); format.scale = 1
             let size = image.size
             let scale = min(1, 2400 / max(size.width, size.height))
@@ -17,9 +28,15 @@ enum Imaging {
             let rectangles = VNDetectRectanglesRequest()
             rectangles.maximumObservations = 1; rectangles.minimumConfidence = 0.7
             let handler = VNImageRequestHandler(cgImage: cg)
-            try handler.perform([rectangles])
+            if crop == nil { try handler.perform([rectangles]) }
             var corrected = CIImage(cgImage: cg)
-            if let r = rectangles.results?.first {
+            if let crop {
+                func point(_ index: Int) -> CIVector {
+                    let p = crop.points[index]
+                    return CIVector(x: p.x * corrected.extent.width, y: (1 - p.y) * corrected.extent.height)
+                }
+                corrected = corrected.applyingFilter("CIPerspectiveCorrection", parameters: ["inputTopLeft": point(0), "inputTopRight": point(1), "inputBottomRight": point(2), "inputBottomLeft": point(3)])
+            } else if let r = rectangles.results?.first {
                 func point(_ p: CGPoint) -> CIVector { CIVector(x: p.x * corrected.extent.width, y: p.y * corrected.extent.height) }
                 corrected = corrected.applyingFilter("CIPerspectiveCorrection", parameters: ["inputTopLeft": point(r.topLeft), "inputTopRight": point(r.topRight), "inputBottomLeft": point(r.bottomLeft), "inputBottomRight": point(r.bottomRight)])
             }

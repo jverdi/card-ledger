@@ -57,6 +57,17 @@ struct Card: Codable, Identifiable {
     var status = "Owned"
     var added = Date()
     var dispositionDate: Date?
+    var acquisitionDate: Date?
+    var acquisitionCost: Decimal?
+    var dispositionProceeds: Decimal?
+    var manualValue: Decimal?
+    var manualValueDate: Date?
+    var manualValueSource: String?
+    var backCorrected: Data?
+    var frontCrop: CropSelection?
+    var backCrop: CropSelection?
+    var collectionValue: Double? { manualValue.map { NSDecimalNumber(decimal: $0).doubleValue } ?? research?.estimate }
+    var valueLabel: String { manualValue != nil ? "Your value" : "Sold-comps estimate" }
     var front: Data?
     var back: Data?
     var thumbnail: Data?
@@ -125,8 +136,8 @@ struct Archive: Codable { var version = 1; var cards: [Card] }
             let safe = ["=", "+", "-", "@"].contains(String(value.prefix(1))) ? "'" + value : value
             return "\"" + safe.replacingOccurrences(of: "\"", with: "\"\"") + "\""
         }
-        let rows = [["Player", "Team", "Sport", "Year", "Set", "Number", "Variant", "Grade", "Status", "Tags", "Location", "Notes"]] + cards.map {
-            [$0.identity.player, $0.identity.team, $0.identity.sport, $0.identity.year, $0.identity.set, $0.identity.number, $0.identity.variant, $0.identity.grade, $0.status, $0.tags, $0.location, $0.notes]
+        let rows = [["Player", "Team", "Sport", "Year", "Set", "Number", "Variant", "Grade", "Status", "Tags", "Location", "Notes", "Manual value USD", "Value source", "Acquisition cost USD", "Disposition proceeds USD"]] + cards.map {
+            [$0.identity.player, $0.identity.team, $0.identity.sport, $0.identity.year, $0.identity.set, $0.identity.number, $0.identity.variant, $0.identity.grade, $0.status, $0.tags, $0.location, $0.notes, $0.manualValue.map { NSDecimalNumber(decimal: $0).stringValue } ?? "", $0.manualValueSource ?? "", $0.acquisitionCost.map { NSDecimalNumber(decimal: $0).stringValue } ?? "", $0.dispositionProceeds.map { NSDecimalNumber(decimal: $0).stringValue } ?? ""]
         }
         let url = URL.temporaryDirectory.appending(path: "CardLedger.csv")
         try rows.map { $0.map(cell).joined(separator: ",") }.joined(separator: "\r\n").write(to: url, atomically: true, encoding: .utf8)

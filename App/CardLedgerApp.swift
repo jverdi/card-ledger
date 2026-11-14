@@ -12,16 +12,25 @@ struct CollectionView: View {
     @State private var status = "Owned"
     @State private var sport = "All sports"
     @State private var sort = "Newest"
+    @State private var year = "All years"
+    @State private var grading = "All grades"
+    @State private var tag = ""
+    @State private var availability = "All values"
     @State private var editing: Card?
     @State private var settings = false
     var visible: [Card] {
         store.cards.filter { card in
             (status == "All" || card.status == status) && (sport == "All sports" || card.identity.sport == sport) &&
+            (year == "All years" || card.identity.year == year) &&
+            (grading == "All grades" || (grading == "Raw" ? card.identity.grade.lowercased() == "raw" : card.identity.grade.lowercased() != "raw" && !card.identity.grade.isEmpty)) &&
+            (tag.isEmpty || card.tags.localizedCaseInsensitiveContains(tag)) &&
+            (availability == "All values" || (availability == "Valued" ? card.collectionValue != nil : card.collectionValue == nil)) &&
             (query.isEmpty || [card.identity.title, card.identity.team, card.identity.sport, card.tags, card.location].joined(separator: " ").localizedCaseInsensitiveContains(query))
         }.sorted {
             switch sort {
             case "Name": return $0.identity.player.localizedStandardCompare($1.identity.player) == .orderedAscending
-            case "Value": return ($0.research?.estimate ?? -1) > ($1.research?.estimate ?? -1)
+            case "Value": return ($0.collectionValue ?? -1) > ($1.collectionValue ?? -1)
+            case "Year": return $0.identity.year.localizedStandardCompare($1.identity.year) == .orderedDescending
             default: return $0.added > $1.added
             }
         }
@@ -31,7 +40,7 @@ struct CollectionView: View {
             List {
                 Section {
                     let owned = store.cards.filter { $0.status == "Owned" }
-                    let values = owned.compactMap { $0.research?.estimate }
+                    let values = owned.compactMap { $0.collectionValue }
                     VStack(alignment: .leading, spacing: 6) {
                         Text(values.reduce(0, +), format: .currency(code: "USD")).font(.largeTitle.bold())
                         Text("\(values.count) of \(owned.count) owned cards valued · saved estimates").font(.caption).foregroundStyle(.secondary)
@@ -40,7 +49,14 @@ struct CollectionView: View {
                 Section {
                     Picker("Status", selection: $status) { ForEach(["Owned", "Sold", "Gifted", "All"], id: \.self) { Text($0) } }
                     Picker("Sport", selection: $sport) { ForEach(["All sports"] + Array(Set(store.cards.map { $0.identity.sport })).sorted(), id: \.self) { Text($0) } }
-                    Picker("Sort", selection: $sort) { ForEach(["Newest", "Name", "Value"], id: \.self) { Text($0) } }
+                    Picker("Sort", selection: $sort) { ForEach(["Newest", "Name", "Year", "Value"], id: \.self) { Text($0) } }
+                    DisclosureGroup("More filters") {
+                        Picker("Year", selection: $year) { ForEach(["All years"] + Array(Set(store.cards.map { $0.identity.year }.filter { !$0.isEmpty })).sorted(), id: \.self) { Text($0) } }
+                        Picker("Grade", selection: $grading) { ForEach(["All grades", "Raw", "Graded"], id: \.self) { Text($0) } }
+                        Picker("Value", selection: $availability) { ForEach(["All values", "Valued", "Not valued"], id: \.self) { Text($0) } }
+                        TextField("Owner or tag", text: $tag)
+                        Button("Reset filters") { status = "Owned"; sport = "All sports"; year = "All years"; grading = "All grades"; availability = "All values"; tag = ""; query = "" }
+                    }
                 }
                 if visible.isEmpty { ContentUnavailableView("Your collection starts here", systemImage: "rectangle.stack", description: Text("Tap + to photograph or add a card.")) }
                 ForEach(visible) { card in
@@ -50,7 +66,7 @@ struct CollectionView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(card.identity.title.isEmpty ? "Unidentified card" : card.identity.title).font(.headline)
                                 Text("\(card.identity.grade) · \(card.identity.variant)").font(.caption).foregroundStyle(.secondary)
-                                if let value = card.research?.estimate { Text(value, format: .currency(code: "USD")) }
+                                if let value = card.collectionValue { Text(value, format: .currency(code: "USD")); Text(card.valueLabel).font(.caption2).foregroundStyle(.secondary) }
                                 else { Text("Not valued").foregroundStyle(.secondary) }
                             }
                         }
@@ -85,17 +101,20 @@ struct CardEditor: View {
     @State private var busy = false
     @State private var message: String?
     @State private var deleting = false
+    @State private var work: Task<Void, Never>?
+    @State private var cropping = false
     var body: some View { NavigationStack { feedbackContent } }
     private var editorForm: some View {
         Form {
             photosSection
             identitySection
             collectionSection
+            manualValueSection
             researchSection
             deleteSection
         }
         .disabled(busy)
-        .overlay { if busy { ProgressView("Working…").padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14)) } }
+        .overlay { if busy { VStack(spacing: 12) { ProgressView("Working…"); Button("Cancel operation") { work?.cancel() } }.padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14)) } }
     }
     private var navigationContent: some View {
         editorForm
@@ -115,6 +134,8 @@ struct CardEditor: View {
                 card.research = nil
             }
             .sheet(isPresented: $camera) { Camera(onPhoto: capturedPhoto) }
+            .sheet(isPresented: $cropping) { cropEditor }
+            .onDisappear { work?.cancel() }
     }
     private var feedbackContent: some View {
         mediaContent
@@ -144,12 +165,14 @@ struct CardEditor: View {
     }
     private var photosSection: some View {
                 Section("Photographs") {
-                    HStack { PhotoView(data: card.thumbnail ?? card.front); PhotoView(data: card.back) }.frame(height: 220)
+                    HStack { PhotoView(data: card.thumbnail ?? card.front); PhotoView(data: card.backCorrected ?? card.back) }.frame(height: 220)
                     Picker("Side", selection: $side) { Text("Front").tag("Front"); Text("Back").tag("Back") }.pickerStyle(.segmented)
                     PhotosPicker("Import photo", selection: $photo, matching: .images)
                     if UIImagePickerController.isSourceTypeAvailable(.camera) { Button("Take photo", systemImage: "camera") { camera = true } }
+                    Button("Adjust corners and rotation") { cropping = true }.disabled((side == "Front" ? card.front : card.back) == nil)
+                    if let original = card.back { DisclosureGroup("Original back · condition photo") { PhotoView(data: original).frame(height: 350) } }
                     if let original = card.front { DisclosureGroup("Original front · condition photo") { PhotoView(data: original).frame(height: 350) } }
-                    Button("Read card details with Apple Intelligence") { run { card.identity = try await Recognizer.identify(text: card.ocr) } }.disabled(card.ocr.isEmpty)
+                    Button("Read card details with Apple Intelligence") { run { let result = try await Recognizer.identify(text: card.ocr); try Task.checkCancellation(); card.identity = result } }.disabled(card.ocr.isEmpty)
                     if !card.ocr.isEmpty { DisclosureGroup("Extracted text") { Text(card.ocr).textSelection(.enabled) } }
                 }
     }
@@ -174,13 +197,44 @@ struct CardEditor: View {
                     TextField("Binder / box location", text: $card.location)
                     TextField("Condition and notes", text: $card.notes, axis: .vertical)
                     Picker("Status", selection: $card.status) { ForEach(["Owned", "Sold", "Gifted"], id: \.self) { Text($0) } }
+                    Toggle("Record purchase date", isOn: Binding(get: { card.acquisitionDate != nil }, set: { card.acquisitionDate = $0 ? Date() : nil }))
+                    if card.acquisitionDate != nil { DatePicker("Acquired", selection: Binding(get: { card.acquisitionDate ?? Date() }, set: { card.acquisitionDate = $0 }), displayedComponents: .date) }
+                    MoneyField(title: "Purchase cost (USD)", value: $card.acquisitionCost)
+                    if card.status != "Owned" {
+                        DatePicker("Disposition date", selection: Binding(get: { card.dispositionDate ?? Date() }, set: { card.dispositionDate = $0 }), displayedComponents: .date)
+                        MoneyField(title: "Proceeds (USD)", value: $card.dispositionProceeds)
+                    }
                 }
+    }
+    private var manualValueSection: some View {
+        Section("Your valuation") {
+            MoneyField(title: "Your value (USD)", value: $card.manualValue)
+                .onChange(of: card.manualValue) { _, value in card.manualValueDate = value == nil ? nil : Date() }
+            TextField("Source or reason", text: Binding(get: { card.manualValueSource ?? "" }, set: { card.manualValueSource = $0 }))
+            if let date = card.manualValueDate { Text("Updated " + date.formatted(date: .abbreviated, time: .omitted)).font(.caption) }
+            Text("Your value takes precedence in collection totals. Clear it to use the saved sold-comps estimate.").font(.caption).foregroundStyle(.secondary)
+        }
+    }
+    @ViewBuilder private var cropEditor: some View {
+        if let original = side == "Front" ? card.front : card.back {
+            CropEditor(data: original, initial: side == "Front" ? card.frontCrop : card.backCrop) { selection in
+                let selectedSide = side
+                run {
+                    let result = try await Imaging.process(original, crop: selection)
+                    try Task.checkCancellation()
+                    if selectedSide == "Front" { card.thumbnail = result.corrected; card.frontCrop = selection }
+                    else { card.backCorrected = result.corrected; card.backCrop = selection }
+                    card.replaceOCR(result.text, front: selectedSide == "Front")
+                }
+            }
+        }
     }
     private var researchSection: some View {
                 Section("Market research") {
                     Text("Research sends the confirmed card details to your private worker. Photos stay on this device.").font(.caption)
                     Button("Look up current value", systemImage: "magnifyingglass") { run {
                         let result = try await ResearchClient.lookup(card.identity, base: workerURL)
+                        try Task.checkCancellation()
                         card.research = result
                         try store.save(card)
                     } }.disabled(!card.identity.confirmed)
@@ -209,11 +263,13 @@ struct CardEditor: View {
     }
     func run(_ action: @escaping @MainActor () async throws -> Void) {
         guard !busy else { return }; busy = true
-        Task { defer { busy = false }; do { try await action() } catch { message = error.localizedDescription } }
+        work = Task { defer { busy = false; work = nil }; do { try await action() } catch { if !Task.isCancelled { message = error.localizedDescription } } }
     }
     func ingest(_ data: Data, side: String) async throws {
         let result = try await Imaging.process(data)
-        if side == "Front" { card.front = result.original; card.thumbnail = result.corrected } else { card.back = result.original }
+        try Task.checkCancellation()
+        if side == "Front" { card.front = result.original; card.thumbnail = result.corrected; card.frontCrop = nil }
+        else { card.back = result.original; card.backCorrected = result.corrected; card.backCrop = nil }
         card.replaceOCR(result.text, front: side == "Front")
     }
 }
@@ -250,4 +306,15 @@ struct SettingsView: View {
         }
     }
     func perform(_ action: () throws -> Void) { do { try action() } catch { message = error.localizedDescription } }
+}
+
+struct MoneyField: View {
+    let title: String
+    @Binding var value: Decimal?
+    private static let formatter: NumberFormatter = {
+        let formatter = NumberFormatter(); formatter.numberStyle = .decimal
+        formatter.minimum = 0; formatter.maximumFractionDigits = 2; formatter.generatesDecimalNumbers = true
+        return formatter
+    }()
+    var body: some View { TextField(title, value: $value, formatter: Self.formatter).keyboardType(.decimalPad) }
 }

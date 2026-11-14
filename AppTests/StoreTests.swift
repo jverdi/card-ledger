@@ -38,4 +38,22 @@ import XCTest
         XCTAssertTrue(card.ocr.contains("Back label"))
         XCTAssertFalse(card.identity.confirmed)
     }
+    func testMoneyAndCropSurviveBackupRestore() async throws {
+        let store = CollectionStore(file: temporary())
+        var card = Card(); card.manualValue = Decimal(string: "12.34"); card.acquisitionCost = Decimal(string: "1.99"); card.frontCrop = CropSelection()
+        try store.save(card)
+        let restored = CollectionStore(file: temporary())
+        try restored.restore(Data(contentsOf: store.export()))
+        XCTAssertEqual(restored.cards[0].manualValue, Decimal(string: "12.34"))
+        XCTAssertEqual(restored.cards[0].acquisitionCost, Decimal(string: "1.99"))
+        XCTAssertEqual(restored.cards[0].frontCrop, card.frontCrop)
+        XCTAssertEqual(restored.cards[0].collectionValue, 12.34)
+    }
+    func testCropRejectsCrossedOrTinyQuadrilaterals() async {
+        XCTAssertTrue(CropSelection().valid)
+        var crop = CropSelection(); crop.points.swapAt(1, 2)
+        XCTAssertFalse(crop.valid)
+        crop = CropSelection(); crop.points = crop.points.map { CropPoint(x: $0.x / 100, y: $0.y / 100) }
+        XCTAssertFalse(crop.valid)
+    }
 }
