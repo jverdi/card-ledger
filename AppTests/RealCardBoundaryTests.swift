@@ -17,27 +17,6 @@ final class RealCardBoundaryTests: XCTestCase {
             let data = try Data(contentsOf:url)
             let image = try XCTUnwrap(UIImage(data:data))
             let cg = try XCTUnwrap(Imaging.rotated(image,quarterTurns:0).cgImage)
-            let rectangles = CardBoundaryDetector.request()
-            let document = VNDetectDocumentSegmentationRequest()
-            let handler = VNImageRequestHandler(cgImage:cg)
-            try handler.perform([rectangles,document])
-            let size = CGSize(width:cg.width,height:cg.height)
-            for (kind,observations) in [("rectangles",rectangles.results ?? []),("document",document.results ?? [])] {
-                let candidates = CardBoundaryDetector.rectangles(observations,size:size)
-                print("REAL_CARD_DIAGNOSTIC \(name) \(kind): \(candidates.map { "confidence=\($0.confidence) area=\($0.area) points=\($0.points)" })")
-            }
-            for radius in [0.0,2.0,4.0] {
-                var input = CIImage(cgImage:cg)
-                input = input.transformed(by:CGAffineTransform(scaleX:768/CGFloat(cg.height),y:768/CGFloat(cg.height)))
-                if radius > 0 { input = input.clampedToExtent().applyingFilter("CIGaussianBlur",parameters:[kCIInputRadiusKey:radius]).cropped(to:input.extent) }
-                let output = try XCTUnwrap(CIContext().createCGImage(input,from:input.extent))
-                let broad = VNDetectRectanglesRequest()
-                broad.maximumObservations = 0; broad.minimumConfidence = 0.2
-                broad.minimumAspectRatio = 0.2; broad.maximumAspectRatio = 1
-                broad.minimumSize = 0.15; broad.quadratureTolerance = 40
-                try VNImageRequestHandler(cgImage:output).perform([broad])
-                print("REAL_CARD_BROAD \(name) radius=\(radius): \(CardBoundaryDetector.rectangles(broad.results ?? [],size:size))")
-            }
             guard let face = try? await Imaging.detectCard(data) else { XCTFail("Missing full card: \(name)"); continue }
             for (actual,expected) in zip(face.crop.points,corners) {
                 XCTAssertEqual(actual.x,Double(expected.x)/1152,accuracy:0.018,"\(name) physical corner x")

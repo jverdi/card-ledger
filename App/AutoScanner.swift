@@ -40,6 +40,24 @@ struct CardRectangle: Equatable {
 // Vision's result order is not a size ranking. Ask for all observations so a
 // statistics table cannot consume the limit before the actual card is returned.
 enum CardBoundaryDetector {
+    static func detect(in handler: VNImageRequestHandler, size: CGSize) throws -> CardRectangle? {
+        // Remove printed details and background texture before finding the physical outline.
+        let foreground = VNGenerateForegroundInstanceMaskRequest()
+        try handler.perform([foreground])
+        var silhouettes: [CardRectangle] = []
+        if let observation = foreground.results?.first {
+            for instance in observation.allInstances {
+                let mask = try observation.generateScaledMaskForImage(forInstances:IndexSet(integer:instance),from:handler)
+                let outline = request(); outline.maximumAspectRatio = 1
+                try VNImageRequestHandler(cvPixelBuffer:mask).perform([outline])
+                silhouettes += rectangles(outline.results ?? [],size:size)
+            }
+        }
+        if let physical = outermost(silhouettes) { return physical }
+        let edges = request()
+        try handler.perform([edges])
+        return outermost(rectangles(edges.results ?? [],size:size))
+    }
     static func request() -> VNDetectRectanglesRequest {
         let request = VNDetectRectanglesRequest()
         request.maximumObservations = 0; request.minimumConfidence = 0.7
@@ -228,12 +246,9 @@ final class AutoScanCamera: NSObject, ObservableObject, AVCaptureVideoDataOutput
         let now = CACurrentMediaTime()
         guard enabled, now-lastFrame >= 0.10, let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         lastFrame = now
-        let request = CardBoundaryDetector.request()
         do {
-            try VNImageRequestHandler(cvPixelBuffer: buffer, orientation: .up).perform([request])
             let size = CGSize(width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer))
-            let candidates = CardBoundaryDetector.rectangles(request.results ?? [],size:size)
-            let rectangle = CardBoundaryDetector.outermost(candidates)
+            let rectangle = try CardBoundaryDetector.detect(in:VNImageRequestHandler(cvPixelBuffer:buffer,orientation:.up),size:size)
             if let rectangle {
                 let point = Self.deviceFocusPoint(portraitPoint:rectangle.center)
                 if hypot(point.x-focusPoint.x,point.y-focusPoint.y) > 0.08 && now-focusUpdatedAt > 0.8 { refocus(at:point) }

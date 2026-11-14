@@ -26,11 +26,8 @@ enum Imaging {
             guard let source = UIImage(data: data) else { throw CocoaError(.fileReadCorruptFile) }
             let image = rotated(source, quarterTurns: 0)
             guard let cg = image.cgImage else { throw CocoaError(.fileReadCorruptFile) }
-            let request = CardBoundaryDetector.request()
-            try VNImageRequestHandler(cgImage: cg).perform([request])
             let size = CGSize(width: cg.width, height: cg.height)
-            let rectangles = CardBoundaryDetector.rectangles(request.results ?? [],size:size)
-            guard let rectangle = CardBoundaryDetector.outermost(rectangles) else { throw ScanFailure.noRectangle }
+            guard let rectangle = try CardBoundaryDetector.detect(in:VNImageRequestHandler(cgImage:cg),size:size) else { throw ScanFailure.noRectangle }
             return CapturedFace(original: data, crop: rectangle.crop, preview: try cropJPEG(cg,crop:rectangle.crop))
         }
         return try await withTaskCancellationHandler {
@@ -57,9 +54,7 @@ enum Imaging {
             let scale = min(1, 2400 / max(size.width, size.height))
             let normalized = UIGraphicsImageRenderer(size: CGSize(width: size.width * scale, height: size.height * scale), format: format).image { _ in image.draw(in: CGRect(origin: .zero, size: CGSize(width: size.width * scale, height: size.height * scale))) }
             guard let cg = normalized.cgImage else { throw CocoaError(.fileReadCorruptFile) }
-            let rectangles = CardBoundaryDetector.request()
-            let handler = VNImageRequestHandler(cgImage: cg)
-            if crop == nil { try handler.perform([rectangles]) }
+            let detected = crop == nil ? try CardBoundaryDetector.detect(in:VNImageRequestHandler(cgImage:cg),size:CGSize(width:cg.width,height:cg.height)) : nil
             var corrected = CIImage(cgImage: cg)
             var resolvedCrop = crop ?? CropSelection()
             if let crop {
@@ -68,7 +63,7 @@ enum Imaging {
                     return CIVector(x: p.x * corrected.extent.width, y: (1 - p.y) * corrected.extent.height)
                 }
                 corrected = corrected.applyingFilter("CIPerspectiveCorrection", parameters: ["inputTopLeft": point(0), "inputTopRight": point(1), "inputBottomRight": point(2), "inputBottomLeft": point(3)])
-            } else if let rectangle = CardBoundaryDetector.outermost(CardBoundaryDetector.rectangles(rectangles.results ?? [],size:CGSize(width:cg.width,height:cg.height))) {
+            } else if let rectangle = detected {
                 resolvedCrop = rectangle.crop
                 func point(_ index: Int) -> CIVector {
                     let p = resolvedCrop.points[index]
