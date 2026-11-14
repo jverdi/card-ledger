@@ -40,38 +40,12 @@ struct CardRectangle: Equatable {
 // Vision's result order is not a size ranking. Ask for all observations so a
 // statistics table cannot consume the limit before the actual card is returned.
 enum CardBoundaryDetector {
-    static func detect(in handler: VNImageRequestHandler, size: CGSize) throws -> CardRectangle? {
-        // Remove printed details and background texture before finding the physical outline.
-        let foreground = VNGenerateForegroundInstanceMaskRequest()
-        try handler.perform([foreground])
-        var silhouettes: [CardRectangle] = []
-        if let observation = foreground.results?.first {
-            for instance in observation.allInstances {
-                let mask = try observation.generateScaledMaskForImage(forInstances:IndexSet(integer:instance),from:handler)
-                let outline = request(); outline.maximumAspectRatio = 1
-                try VNImageRequestHandler(cvPixelBuffer:mask).perform([outline])
-                silhouettes += rectangles(outline.results ?? [],size:size)
-                let contours = VNDetectContoursRequest()
-                contours.detectsDarkOnLight = false; contours.maximumImageDimension = 512
-                let maskImage = CIImage(cvPixelBuffer:mask)
-                guard let maskCG = CIContext().createCGImage(maskImage,from:maskImage.extent,format:.RGBA8,colorSpace:CGColorSpaceCreateDeviceRGB()) else { continue }
-                try VNImageRequestHandler(cgImage:maskCG).perform([contours])
-                for contour in contours.results?.first?.topLevelContours ?? [] {
-                    guard let polygon = try? contour.polygonApproximation(epsilon:0.015) else { continue }
-                    guard polygon.pointCount == 4 else { continue }
-                    let points = polygon.normalizedPoints.map { CGPoint(x:Double($0.x),y:1-Double($0.y)) }
-                    let center = CGPoint(x:points.map(\.x).reduce(0,+)/4,y:points.map(\.y).reduce(0,+)/4)
-                    let sorted = points.sorted { atan2($0.y-center.y,$0.x-center.x) < atan2($1.y-center.y,$1.x-center.x) }
-                    let first = sorted.indices.min { sorted[$0].x+sorted[$0].y < sorted[$1].x+sorted[$1].y }!
-                    let ordered = (0..<4).map { sorted[(first+$0)%4] }
-                    silhouettes.append(CardRectangle(points:ordered,confidence:1,pixelSize:size))
-                }
-            }
-        }
-        if let physical = outermost(silhouettes) { return physical }
-        let edges = request()
-        try handler.perform([edges])
-        return outermost(rectangles(edges.results ?? [],size:size))
+    static func detect(in image: CIImage) throws -> CardRectangle? {
+        let request = request()
+        try VNImageRequestHandler(ciImage:image).perform([request])
+        var candidates = rectangles(request.results ?? [],size:image.extent.size)
+        if let edges = CardEdgeLines.detect(image) { candidates.append(edges) }
+        return outermost(candidates)
     }
     static func request() -> VNDetectRectanglesRequest {
         let request = VNDetectRectanglesRequest()
@@ -262,8 +236,7 @@ final class AutoScanCamera: NSObject, ObservableObject, AVCaptureVideoDataOutput
         guard enabled, now-lastFrame >= 0.10, let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         lastFrame = now
         do {
-            let size = CGSize(width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer))
-            let rectangle = try CardBoundaryDetector.detect(in:VNImageRequestHandler(cvPixelBuffer:buffer,orientation:.up),size:size)
+            let rectangle = try CardBoundaryDetector.detect(in:CIImage(cvPixelBuffer:buffer))
             if let rectangle {
                 let point = Self.deviceFocusPoint(portraitPoint:rectangle.center)
                 if hypot(point.x-focusPoint.x,point.y-focusPoint.y) > 0.08 && now-focusUpdatedAt > 0.8 { refocus(at:point) }

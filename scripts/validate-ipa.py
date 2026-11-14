@@ -3,6 +3,8 @@ import plistlib
 import sys
 import zipfile
 with zipfile.ZipFile(sys.argv[1]) as ipa:
+    if any(p.rsplit('/', 1)[-1] in {'IMG_2345.jpeg', 'IMG_2346.jpeg'} for p in ipa.namelist()):
+        raise SystemExit('Test-only card photos must not ship in the app')
     paths = [p for p in ipa.namelist() if p.startswith('Payload/') and p.endswith('.app/Info.plist') and p.count('/') == 2]
     if len(paths) != 1:
         raise SystemExit('Expected exactly one app Info.plist')

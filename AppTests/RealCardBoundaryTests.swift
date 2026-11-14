@@ -15,19 +15,6 @@ final class RealCardBoundaryTests: XCTestCase {
         for (name,corners) in examples {
             let url = try XCTUnwrap(Bundle(for:Self.self).url(forResource:name,withExtension:"jpeg"))
             let data = try Data(contentsOf:url)
-            let image = try XCTUnwrap(UIImage(data:data))
-            let cg = try XCTUnwrap(Imaging.rotated(image,quarterTurns:0).cgImage)
-            let handler = VNImageRequestHandler(cgImage:cg)
-            let foreground = VNGenerateForegroundInstanceMaskRequest()
-            try handler.perform([foreground])
-            for observation in foreground.results ?? [] {
-                for instance in observation.allInstances {
-                    let mask = try observation.generateScaledMaskForImage(forInstances:IndexSet(integer:instance),from:handler)
-                    let ci = CIImage(cvPixelBuffer:mask)
-                    let rendered = try XCTUnwrap(CIContext().createCGImage(ci,from:ci.extent,format:.RGBA8,colorSpace:CGColorSpaceCreateDeviceRGB()))
-                    let attachment = XCTAttachment(image:UIImage(cgImage:rendered)); attachment.name = "\(name) foreground \(instance)"; attachment.lifetime = .keepAlways; add(attachment)
-                }
-            }
             let face: CapturedFace
             do { face = try await Imaging.detectCard(data) }
             catch { XCTFail("Missing full card: \(name): \(error)"); continue }
@@ -37,6 +24,23 @@ final class RealCardBoundaryTests: XCTestCase {
             }
             let preview = try XCTUnwrap(UIImage(data:try XCTUnwrap(face.preview)))
             let attachment = XCTAttachment(image:preview); attachment.name = "\(name) detected crop"; attachment.lifetime = .keepAlways; add(attachment)
+        }
+    }
+    func testCameraPixelBuffersKeepPhysicalCorners() throws {
+        for (name,corners) in examples {
+            let url = try XCTUnwrap(Bundle(for:Self.self).url(forResource:name,withExtension:"jpeg"))
+            let image = try XCTUnwrap(UIImage(data:Data(contentsOf:url)))
+            let cg = try XCTUnwrap(Imaging.rotated(image,quarterTurns:0).cgImage)
+            var optionalBuffer: CVPixelBuffer?
+            XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault,cg.width,cg.height,kCVPixelFormatType_32BGRA,
+                [kCVPixelBufferIOSurfacePropertiesKey:[:]] as CFDictionary,&optionalBuffer),kCVReturnSuccess)
+            let buffer = try XCTUnwrap(optionalBuffer)
+            CIContext().render(CIImage(cgImage:cg),to:buffer)
+            let rectangle = try XCTUnwrap(CardBoundaryDetector.detect(in:CIImage(cvPixelBuffer:buffer)),name)
+            for (actual,expected) in zip(rectangle.points,corners) {
+                XCTAssertEqual(actual.x,expected.x/1152,accuracy:0.018,"\(name) camera corner x")
+                XCTAssertEqual(actual.y,expected.y/1536,accuracy:0.018,"\(name) camera corner y")
+            }
         }
     }
 }

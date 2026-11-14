@@ -26,8 +26,7 @@ enum Imaging {
             guard let source = UIImage(data: data) else { throw CocoaError(.fileReadCorruptFile) }
             let image = rotated(source, quarterTurns: 0)
             guard let cg = image.cgImage else { throw CocoaError(.fileReadCorruptFile) }
-            let size = CGSize(width: cg.width, height: cg.height)
-            guard let rectangle = try CardBoundaryDetector.detect(in:VNImageRequestHandler(cgImage:cg),size:size) else { throw ScanFailure.noRectangle }
+            guard let rectangle = try CardBoundaryDetector.detect(in:CIImage(cgImage:cg)) else { throw ScanFailure.noRectangle }
             return CapturedFace(original: data, crop: rectangle.crop, preview: try cropJPEG(cg,crop:rectangle.crop))
         }
         return try await withTaskCancellationHandler {
@@ -54,7 +53,7 @@ enum Imaging {
             let scale = min(1, 2400 / max(size.width, size.height))
             let normalized = UIGraphicsImageRenderer(size: CGSize(width: size.width * scale, height: size.height * scale), format: format).image { _ in image.draw(in: CGRect(origin: .zero, size: CGSize(width: size.width * scale, height: size.height * scale))) }
             guard let cg = normalized.cgImage else { throw CocoaError(.fileReadCorruptFile) }
-            let detected = crop == nil ? try CardBoundaryDetector.detect(in:VNImageRequestHandler(cgImage:cg),size:CGSize(width:cg.width,height:cg.height)) : nil
+            let detected = crop == nil ? try CardBoundaryDetector.detect(in:CIImage(cgImage:cg)) : nil
             var corrected = CIImage(cgImage: cg)
             var resolvedCrop = crop ?? CropSelection()
             if let crop {
