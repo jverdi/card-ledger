@@ -51,6 +51,19 @@ enum CardBoundaryDetector {
                 let outline = request(); outline.maximumAspectRatio = 1
                 try VNImageRequestHandler(cvPixelBuffer:mask).perform([outline])
                 silhouettes += rectangles(outline.results ?? [],size:size)
+                let contours = VNDetectContoursRequest()
+                contours.detectsDarkOnLight = false; contours.maximumImageDimension = 512
+                try VNImageRequestHandler(cvPixelBuffer:mask).perform([contours])
+                for contour in contours.results?.first?.topLevelContours ?? [] {
+                    let polygon = try contour.polygonApproximation(epsilon:0.015)
+                    guard polygon.pointCount == 4 else { continue }
+                    let points = polygon.normalizedPoints.map { CGPoint(x:Double($0.x),y:1-Double($0.y)) }
+                    let center = CGPoint(x:points.map(\.x).reduce(0,+)/4,y:points.map(\.y).reduce(0,+)/4)
+                    let sorted = points.sorted { atan2($0.y-center.y,$0.x-center.x) < atan2($1.y-center.y,$1.x-center.x) }
+                    let first = sorted.indices.min { sorted[$0].x+sorted[$0].y < sorted[$1].x+sorted[$1].y }!
+                    let ordered = (0..<4).map { sorted[(first+$0)%4] }
+                    silhouettes.append(CardRectangle(points:ordered,confidence:1,pixelSize:size))
+                }
             }
         }
         if let physical = outermost(silhouettes) { return physical }
