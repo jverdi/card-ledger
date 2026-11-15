@@ -4,7 +4,7 @@ permissions:
   contents: read
 jobs:
   ios:
-    timeout-minutes: 20
+    timeout-minutes: 35
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4

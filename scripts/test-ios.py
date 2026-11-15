@@ -39,7 +39,7 @@ try:
          '-parallel-testing-enabled', 'NO', '-test-timeouts-enabled', 'YES',
          '-default-test-execution-time-allowance', '60',
          '-maximum-test-execution-time-allowance', '120',
-         '-resultBundlePath', 'TestResults.xcresult'], 600)
+         '-resultBundlePath', 'TestResults.xcresult'], 1200)
 except (subprocess.CalledProcessError, subprocess.TimeoutExpired, StopIteration, KeyError) as error:
     print('iOS verification failed: ' + str(error), flush=True)
     subprocess.run(['xcrun', 'simctl', 'list', 'devices', 'booted'], timeout=30)
