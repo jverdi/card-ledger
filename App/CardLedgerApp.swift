@@ -113,7 +113,7 @@ struct CollectionView: View {
                 ForEach(visible) { card in
                     Button { viewing = card } label: {
                         CardCollectionRow(card:card,namespace:scanFlight).contentShape(Rectangle())
-                    }.buttonStyle(.plain).foregroundStyle(.primary).id(card.id).accessibilityIdentifier("card.row." + card.id.uuidString)
+                    }.buttonStyle(.plain).foregroundStyle(.primary).id(card.id).accessibilityIdentifier("card.row." + card.id.uuidString).accessibilityHint("Opens card details")
                 }
             }.navigationTitle("Card Ledger").searchable(text: $query, prompt: "Player, team, set, tag or location")
                 .toolbar {

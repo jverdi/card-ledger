@@ -1,28 +1,122 @@
 import SwiftUI
 import PhotosUI
 
+/// Presentation only: keep the scanned identity intact for matching and editing.
+enum CardRowText {
+    static func name(_ raw: String) -> String {
+        let text = raw.trimmingCharacters(in:.whitespacesAndNewlines)
+        guard text == text.uppercased(), text != text.lowercased() else { return text }
+        let initials: Set<String> = ["DJ","AJ","CJ","TJ","JD","JP","JR","II","III","IV","LA","NY","USA","MLB","NBA","NFL","NHL"]
+        return text.split(separator:" ").map { word in
+            let token = String(word)
+            return initials.contains(token) || token.contains(".") ? token : token.capitalized
+        }.joined(separator:" ")
+    }
+    static func brand(_ raw: String) -> String {
+        let key = raw.lowercased().filter { $0.isLetter || $0.isNumber }
+        switch key {
+        case "topps", "thetoppscompanyinc", "toppscompanyinc", "thetoppscompany": return "Topps"
+        case "panini", "paniniamericainc", "paniniamerica", "paninigroup": return "Panini"
+        case "upperdeck", "theupperdeckcompany", "theupperdeckcompanyllc", "upperdeckcompany": return "Upper Deck"
+        default: return name(raw)
+        }
+    }
+    static func metadata(_ identity: Identity) -> String {
+        let brand = brand(identity.manufacturer)
+        let set = name(identity.set)
+        let product: String
+        if set.isEmpty { product = brand }
+        else if brand.isEmpty || set.localizedCaseInsensitiveCompare(brand) == .orderedSame || set.lowercased().hasPrefix(brand.lowercased()+" ") { product = set }
+        else { product = brand + " " + set }
+        return [identity.year.trimmingCharacters(in:.whitespacesAndNewlines),product].filter { !$0.isEmpty }.joined(separator:" · ")
+    }
+}
+
 struct CardCollectionRow: View {
     let card: Card
     var namespace: Namespace.ID?
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo:.body) private var thumbnailWidth = 72.0
+    private var player: String { card.identity.player.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty ? "Unidentified card" : CardRowText.name(card.identity.player) }
+    private var team: String { CardRowText.name(card.identity.team) }
+    private var metadata: String { CardRowText.metadata(card.identity) }
     var body: some View {
-        HStack(spacing: 14) {
-            photo.frame(width: 56,height: 78).clipShape(RoundedRectangle(cornerRadius: 7))
-                .modifier(CardFlight(id: "photo-" + card.id.uuidString,namespace: namespace))
-            VStack(alignment: .leading,spacing: 4) {
-                Text(card.identity.player.isEmpty ? "Unidentified card" : card.identity.player).font(.headline).lineLimit(1)
-                Text(card.identity.team.isEmpty ? "Tap to review details" : card.identity.team).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-                Text([card.identity.manufacturer,card.identity.year].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
-                if let note = card.scanNote, card.collectionValue == nil { Text(note).font(.caption2).foregroundStyle(.secondary).lineLimit(2) }
-            }.modifier(CardFlight(id: "identity-" + card.id.uuidString,namespace: namespace))
-            Spacer(minLength: 0)
-            VStack(alignment: .trailing,spacing: 4) {
-                if let value = card.collectionValue { Text(value,format: .currency(code:"USD")).font(.subheadline.bold()); Text(card.valueLabel).font(.caption2).foregroundStyle(.secondary) }
-                else { Text("—").font(.headline); Text("Not valued").font(.caption2).foregroundStyle(.secondary) }
+        Group {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment:.leading,spacing:14) {
+                    thumbnail
+                    details
+                }
+            } else {
+                HStack(alignment:.center,spacing:16) {
+                    thumbnail
+                    details
+                }
             }
-        }.padding(.vertical,5).accessibilityElement(children: .combine)
+        }
+        .padding(.vertical,10)
+        .frame(maxWidth:.infinity,alignment:.leading)
+        .contentShape(Rectangle())
+        .accessibilityElement(children:.ignore)
+        .accessibilityLabel(accessibilitySummary)
     }
-    private var photo: some View { PhotoView(data: card.thumbnail ?? card.front) }
+    private var thumbnail: some View {
+        PhotoView(data:card.thumbnail ?? card.front)
+            .frame(width:min(thumbnailWidth,92),height:min(thumbnailWidth,92)*1.4)
+            .background(.quaternary.opacity(0.35),in:RoundedRectangle(cornerRadius:8))
+            .clipShape(RoundedRectangle(cornerRadius:8))
+            .overlay(RoundedRectangle(cornerRadius:8).strokeBorder(.primary.opacity(0.08),lineWidth:0.5))
+            .shadow(color:.black.opacity(0.12),radius:3,y:2)
+            .modifier(CardFlight(id:"photo-"+card.id.uuidString,namespace:namespace))
+            .accessibilityHidden(true)
+    }
+    private var details: some View {
+        VStack(alignment:.leading,spacing:0) {
+            HStack(alignment:.firstTextBaseline,spacing:8) {
+                Text(player).font(.headline).foregroundStyle(.primary)
+                    .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
+                    .fixedSize(horizontal:false,vertical:true).frame(maxWidth:.infinity,alignment:.leading)
+                Image(systemName:"chevron.forward").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
+            if !team.isEmpty {
+                Text(team).font(.subheadline).foregroundStyle(.secondary).padding(.top,3)
+                    .lineLimit(typeSize.isAccessibilitySize ? nil : 2).fixedSize(horizontal:false,vertical:true)
+            }
+            if !metadata.isEmpty {
+                Text(metadata).font(.caption).foregroundStyle(.secondary).padding(.top,9)
+                    .lineLimit(typeSize.isAccessibilitySize ? nil : 2).fixedSize(horizontal:false,vertical:true)
+            }
+            valuation.padding(.top,8)
+        }.modifier(CardFlight(id:"identity-"+card.id.uuidString,namespace:namespace))
+    }
+    @ViewBuilder private var valuation: some View {
+        if let value = card.collectionValue {
+            ViewThatFits(in:.horizontal) {
+                HStack(alignment:.firstTextBaseline,spacing:6) {
+                    amount(value)
+                    Text(card.valueLabel).font(.caption).foregroundStyle(.secondary).fixedSize()
+                }
+                VStack(alignment:.leading,spacing:3) {
+                    amount(value)
+                    Text(card.valueLabel).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        } else {
+            Label("Price unavailable",systemImage:"tag")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+        }
+    }
+    private func amount(_ value: Double) -> some View {
+        Text(value,format:.currency(code:"USD")).font(.subheadline.weight(.semibold))
+            .monospacedDigit().foregroundStyle(.primary).fixedSize(horizontal:false,vertical:true)
+    }
+    private var accessibilitySummary: String {
+        let price = card.collectionValue.map { $0.formatted(.currency(code:"USD"))+", "+card.valueLabel } ?? "Price unavailable"
+        return [player,team,metadata,price].filter { !$0.isEmpty }.joined(separator:", ")
+    }
 }
+
 struct CardFlight: ViewModifier {
     let id: String
     let namespace: Namespace.ID?

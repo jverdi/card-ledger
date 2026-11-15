@@ -40,6 +40,10 @@ struct CardDetailView: View {
                                         Text(card.valueLabel).font(.caption).foregroundStyle(.white.opacity(0.6))
                                     } else { Text("Not valued").font(.subheadline).foregroundStyle(.white.opacity(0.6)) }
                                 }
+                                if let note = card.scanNote, note != card.pricing?.summary {
+                                    Text(note).font(.footnote).foregroundStyle(.white.opacity(0.7))
+                                        .multilineTextAlignment(.center)
+                                }
                                 if let result = card.pricing {
                                     CardPricingSummary(pricing:result).frame(maxWidth:.infinity,alignment:.leading)
                                     if !result.candidates.isEmpty {
@@ -131,3 +135,4 @@ struct CardDetailView: View {
         catch { self.error = error.localizedDescription }
     }
 }
+
