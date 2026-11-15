@@ -251,8 +251,8 @@ struct ScanFlowView: View {
             if compact {
                 CardCollectionRow(card:model.card,namespace:namespace).padding(18).background(.white.opacity(0.09),in:RoundedRectangle(cornerRadius:22)).padding(.horizontal,20)
             } else {
-                HolographicCard(front:model.card.thumbnail ?? model.card.front,back:model.card.backCorrected ?? model.card.back)
-                    .frame(maxWidth:300).frame(height:322).accessibilityIdentifier("scan.cardReveal").matchedGeometryEffect(id:"photo-"+model.id.uuidString,in:namespace)
+                HolographicCard(front:model.card.thumbnail ?? model.card.front,back:model.card.backCorrected ?? model.card.back,accessibilityID:"scan.cardReveal")
+                    .frame(maxWidth:300).frame(height:322).matchedGeometryEffect(id:"photo-"+model.id.uuidString,in:namespace)
                 CardIdentityHeader(identity:model.card.identity,placeholder:model.player)
                     .padding(.top,8).matchedGeometryEffect(id:"identity-"+model.id.uuidString,in:namespace)
                     .opacity(showIdentity ? 1:0).offset(y:showIdentity ? 0:24).scaleEffect(showIdentity ? 1:0.92).blur(radius:showIdentity ? 0:8)

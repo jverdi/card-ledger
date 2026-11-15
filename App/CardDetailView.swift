@@ -23,9 +23,8 @@ struct CardDetailView: View {
                         ScrollView {
                             VStack(spacing:32) {
                                 Spacer(minLength:20)
-                                HolographicCard(front:card.thumbnail ?? card.front,back:card.backCorrected ?? card.back)
+                                HolographicCard(front:card.thumbnail ?? card.front,back:card.backCorrected ?? card.back,accessibilityID:"card.detail.reveal")
                                     .frame(width:min(300,max(1,geometry.size.width-48)),height:322)
-                                    .accessibilityIdentifier("card.detail.reveal")
                                 CardIdentityHeader(identity:card.identity,playerIdentifier:"card.detail.player")
                                     .padding(.top,6)
                                 pricingPanel(card)

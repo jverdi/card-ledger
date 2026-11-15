@@ -142,6 +142,7 @@ struct CardInspectionPresenter: UIViewControllerRepresentable {
     func makeUIViewController(context:Context) -> UIViewController {
         let controller = UIViewController(); controller.view.backgroundColor = .clear
         controller.view.isUserInteractionEnabled = false
+        controller.view.isAccessibilityElement = false; controller.view.accessibilityElementsHidden = true
         return controller
     }
     func updateUIViewController(_ controller:UIViewController,context:Context) {

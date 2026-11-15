@@ -13,6 +13,7 @@ struct HolographicCard: View {
     let front: Data?
     let back: Data?
     var rotationSpeed: Double = 43
+    var accessibilityID = "card.viewer"
     var onInteractionChanged: (Bool) -> Void = { _ in }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -37,6 +38,8 @@ struct HolographicCard: View {
                 .scaleEffect(pinchScale)
                 .shadow(color:.cyan.opacity(0.13),radius:28,y:16)
             }
+            .frame(width:geometry.size.width,height:geometry.size.height)
+            .contentShape(Rectangle())
             .overlay {
                 CardGestureSurface(canInspect:motion.canInspect,onTap:toggle,
                     onPan:{ translation,velocity,state in pan(translation,velocity,state) },
@@ -44,6 +47,7 @@ struct HolographicCard: View {
                     .accessibilityHidden(true)
             }
             .accessibilityElement(children:.ignore)
+            .accessibilityIdentifier(accessibilityID)
             .accessibilityLabel("Card viewer")
             .accessibilityValue(accessibilityValue)
             .accessibilityHint("Tap to pause or resume. Swipe a paused card to flip. Drag to rotate. Pinch a paused card to inspect.")
@@ -72,7 +76,7 @@ struct HolographicCard: View {
         .background(CardInspectionPresenter(face:$inspected,onClosed:{
             if !reduceMotion { motion.resume(at:now) }
             onInteractionChanged(false)
-        }).frame(width:0,height:0))
+        }).frame(width:0,height:0).accessibilityHidden(true))
     }
 
     private var accessibilityValue: String {
