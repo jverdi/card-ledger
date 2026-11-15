@@ -124,13 +124,14 @@ struct CollectionView: View {
                 }
                 if visible.isEmpty {
                     if !collectionIsEmpty || hasFilters {
-                        ContentUnavailableView {
-                            Label("No matching cards found",systemImage:"line.3.horizontal.decrease.circle")
-                        } description: {
-                            Text("Try another search or clear your filters to see all cards.")
-                        } actions: {
-                            Button("Clear filters",action:clearFilters).accessibilityIdentifier("collection.clearFilters")
-                        }.accessibilityIdentifier("collection.noMatches")
+                        VStack(spacing:4) {
+                            ContentUnavailableView("No matching cards found",systemImage:"line.3.horizontal.decrease.circle",
+                                description:Text("Try another search or clear your filters to see all cards."))
+                            Button("Clear filters",action:clearFilters)
+                                .font(.body.weight(.medium)).frame(minHeight:44)
+                                .buttonStyle(.borderless).accessibilityIdentifier("collection.clearFilters")
+                        }.frame(maxWidth:.infinity).padding(.bottom,20)
+
                     } else {
                         ContentUnavailableView("Your collection starts here",systemImage:"rectangle.stack",description:Text("Tap + to scan your first card."))
                     }

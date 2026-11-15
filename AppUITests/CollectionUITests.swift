@@ -10,6 +10,7 @@ import XCTest
         XCTAssertTrue(app.buttons["collection.add"].waitForExistence(timeout:20))
         XCTAssertTrue(app.staticTexts["Card type"].exists)
         XCTAssertFalse(app.staticTexts["Sport"].exists)
+        XCTAssertTrue(app.buttons["Recently added"].exists)
         let search = app.searchFields.firstMatch
         if !search.isHittable { app.swipeDown() }
         XCTAssertTrue(search.waitForExistence(timeout:5))
@@ -17,12 +18,13 @@ import XCTest
         if app.keyboards.buttons["Search"].exists { app.keyboards.buttons["Search"].tap() }
         XCTAssertTrue(app.staticTexts["No matching cards found"].waitForExistence(timeout:5))
         XCTAssertFalse(app.staticTexts["Your collection starts here"].exists)
-        if !app.buttons["collection.clearFilters"].isHittable { app.swipeUp() }
-        app.buttons["collection.clearFilters"].tap()
+        let clear = app.buttons["collection.clearFilters"]
+        XCTAssertTrue(clear.waitForExistence(timeout:5))
+        for _ in 0..<3 { if clear.isHittable { break }; app.swipeUp() }
+        clear.tap()
         let rows = app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","card.row."))
         XCTAssertTrue(rows.firstMatch.waitForExistence(timeout:10))
         XCTAssertEqual(rows.count,2,"Clear filters must also reveal non-Owned cards")
-        XCTAssertTrue(app.buttons["Recently added"].exists)
         let attachment = XCTAttachment(screenshot:app.screenshot()); attachment.name = "Collection card types and sort order"; attachment.lifetime = .keepAlways; add(attachment)
     }
     func testGuidedScanAndSavedCardViewerEditRemove() throws {
