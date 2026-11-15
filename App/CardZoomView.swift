@@ -13,10 +13,11 @@ struct CardZoomView: View {
         GeometryReader { geometry in
             let imageSize = UIImage(data:face.data)?.size ?? CGSize(width:5,height:7)
             let fit = min(geometry.size.width/imageSize.width,geometry.size.height/imageSize.height)
-            let initialScale = face.origin.width / max(1,imageSize.width*fit*(closing ? 1:face.initialZoom))
+            let entryZoom = min(8,max(1,face.initialZoom*face.origin.width/max(1,imageSize.width*fit)))
+            let initialScale = face.origin.width / max(1,imageSize.width*fit*(closing ? 1:entryZoom))
             ZStack {
                 Color.black.opacity(entered ? 1:0).ignoresSafeArea()
-                ZoomableCardImage(data:face.data,initialZoom:face.initialZoom,requestedZoom:$requestedZoom,zoom:$zoom,onClose:close)
+                ZoomableCardImage(data:face.data,initialZoom:entryZoom,requestedZoom:$requestedZoom,zoom:$zoom,onClose:close)
                     .scaleEffect(entered || reduceMotion ? 1:initialScale)
                     .offset(x:entered || reduceMotion ? 0:face.origin.midX-geometry.frame(in:.global).midX,
                             y:entered || reduceMotion ? 0:face.origin.midY-geometry.frame(in:.global).midY)

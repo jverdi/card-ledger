@@ -5,6 +5,7 @@ struct OrientationEvidence {
     let quarterTurns: Int
     var score: Double = 0
     var characters: Int = 0
+    var words: Set<String> = []
 }
 struct OrientationDecision {
     let quarterTurns: Int
@@ -34,7 +35,8 @@ enum CardOrientation {
         // Accurate OCR returns word-level boxes, so a one-word statistics cell
         // cannot tell us reading direction. Fast OCR provides character positions
         // and resolves those cases without assuming the back matches the front.
-        let characters = try evidence(in:sample,level:.fast)
+        let vocabulary = Set(accurate.flatMap { $0.words })
+        let characters = try evidence(in:sample,level:.fast,referenceWords:vocabulary)
         return choose(characters.map { fast in
             let prior = accurate.first { $0.quarterTurns == fast.quarterTurns }
             return OrientationEvidence(quarterTurns:fast.quarterTurns,
@@ -47,7 +49,11 @@ enum CardOrientation {
         let dy = (last.y-first.y) * size.height
         return dx > 4 && abs(dy) < dx * 0.45
     }
-    private static func evidence(in sample: UIImage, level: VNRequestTextRecognitionLevel) throws -> [OrientationEvidence] {
+    private static func words(in text:String) -> [String] {
+        text.folding(options:[.caseInsensitive,.diacriticInsensitive],locale:Locale(identifier:"en_US_POSIX"))
+            .split(whereSeparator:{ !$0.isLetter && !$0.isNumber }).map(String.init)
+    }
+    private static func evidence(in sample: UIImage, level: VNRequestTextRecognitionLevel, referenceWords:Set<String> = []) throws -> [OrientationEvidence] {
         var evidence: [OrientationEvidence] = []
         for turns in 0..<4 {
             try Task.checkCancellation()
@@ -59,7 +65,14 @@ enum CardOrientation {
             try VNImageRequestHandler(cgImage:cg,orientation:.up).perform([request])
             var candidate = OrientationEvidence(quarterTurns:turns)
             for observation in request.results ?? [] {
-                guard let text = observation.topCandidates(1).first, text.confidence >= 0.65 else { continue }
+                // Fast Vision often reports 0.5 for correctly recognized words.
+                // Accept that tier only when the accurate pass independently read
+                // the same tokens; upside-down OCR gibberish gets no vote.
+                guard let text = observation.topCandidates(1).first,
+                      text.confidence >= (level == .fast ? 0.45:0.65) else { continue }
+                let tokens = words(in:text.string)
+                if level == .fast && (tokens.isEmpty || !tokens.allSatisfy({ referenceWords.contains($0) })) { continue }
+                candidate.words.formUnion(tokens)
                 let string = text.string
                 let characters = string.filter { $0.isLetter || $0.isNumber }
                 guard characters.count >= 3 else { continue }

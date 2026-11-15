@@ -29,7 +29,7 @@ import XCTest
         card.pinch(withScale:1.7,velocity:1)
         let canvas = app.scrollViews["card.zoom.canvas"]
         XCTAssertTrue(canvas.waitForExistence(timeout:10))
-        canvas.pinch(withScale:2,velocity:1)
+        canvas.pinch(withScale:2.5,velocity:1)
         let percent = Double((canvas.value as? String ?? "").components(separatedBy:" ").first ?? "") ?? 0
         XCTAssertGreaterThan(percent,200,"The flat photo must zoom beyond its fit size")
         let zoomed = XCTAttachment(screenshot:app.screenshot()); zoomed.name = "Flat face zoomed beyond fit"; zoomed.lifetime = .keepAlways; add(zoomed)

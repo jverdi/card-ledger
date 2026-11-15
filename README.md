@@ -29,7 +29,18 @@ Still required for the complete automatic workflow:
 ## Build
 On a Mac with Xcode 26+: install XcodeGen, run `xcodegen generate`, then open CardLedger.xcodeproj. App targets iOS 26 for Foundation Models. Current recognition consumes OCR from both cropped faces; direct multimodal image understanding is not implemented.
 
-Run `python3 scripts/test-ios.py` on a Mac for native and UI tests. Pricing tests use an injected HTTP transport and cover identity conflicts, hidden parallels, pagination, rate limits, malformed/offline responses and backup migration. iOS StoreTests cover persistence, import conflicts and corruption protection; these run on the GitHub macOS runner, not this Linux host. Tests also cover crop geometry, exact decimal values, checksum corruption and legacy photo migration.
+Run `python3 scripts/test-ios.py` on a Mac for all native and UI tests. `--suite orientation` and `--suite interaction` provide focused diagnostics, also available through the Verify workflow; these never upload a build. TestFlight always runs the full suite. UI scan fixtures use deterministic recognition and cropped previews to avoid hosted-simulator OCR delays; native tests still run real Vision and retain all image assertions. Pricing tests use an injected HTTP transport and cover identity conflicts, hidden parallels, pagination, rate limits, malformed/offline responses and backup migration. iOS StoreTests cover persistence, import conflicts and corruption protection; these run on the GitHub macOS runner, not this Linux host. Tests also cover crop geometry, exact decimal values, checksum corruption and legacy photo migration.
+
+## Interactive card viewer
+
+The saved-card viewer and scan reveal share a semantic-font identity header with player/card name, team, deduplicated year/product metadata and a quiet card-number/variation line. Pricing is grouped in one panel; provider timestamps and detailed evidence are available under Price details.
+
+- Tap the card to pause on its nearest face; tap again to resume.
+- A quick horizontal swipe while paused flips to the other face and stays paused.
+- Drag to control rotation and tilt. Release a normal drag to resume from that angle.
+- Pinch outward while paused to open a flat photo. Pinch or double-tap to zoom, up to 8x, and drag to pan. Pinch inward past the fitted size or use Close to return to automatic rotation.
+- VoiceOver provides Flip card and Inspect face actions. The flat viewer also has zoom buttons and an accessible close action. Reduce Motion keeps automatic rotation off.
+- In batch mode, an untouched reveal advances automatically; active inspection holds it open. The flat viewer uses an over-full-screen presentation so recognition and the capture session are not cancelled by a sheet lifecycle change.
 
 ## Collection metadata and sorting
 

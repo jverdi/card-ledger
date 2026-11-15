@@ -17,6 +17,8 @@ struct HolographicCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @State private var motion = CardMotion()
+    @State private var frontImage: UIImage?
+    @State private var backImage: UIImage?
     @State private var inspected: InspectedCardFace?
     @State private var pinchScale: CGFloat = 1
     private var now: TimeInterval { Date.timeIntervalSinceReferenceDate }
@@ -27,8 +29,8 @@ struct HolographicCard: View {
                 let angle = motion.angle(at:time,speed:rotationSpeed)
                 let isFront = CardMotion.frontVisible(at:angle)
                 ZStack {
-                    face(front,time:time).opacity(isFront ? 1:0)
-                    face(back,time:time).rotation3DEffect(.degrees(180),axis:(x:0,y:1,z:0)).opacity(isFront ? 0:1)
+                    face(frontImage,time:time).opacity(isFront ? 1:0)
+                    face(backImage,time:time).rotation3DEffect(.degrees(180),axis:(x:0,y:1,z:0)).opacity(isFront ? 0:1)
                 }
                 .rotation3DEffect(.degrees(angle),axis:(x:0,y:1,z:0),perspective:0.45)
                 .rotation3DEffect(.degrees(motion.mode == .spinning && !reduceMotion ? sin(time*0.65)*7 : motion.pitch),axis:(x:1,y:0,z:0))
@@ -60,7 +62,12 @@ struct HolographicCard: View {
                     .offset(y:22).allowsHitTesting(false).accessibilityHidden(true)
             }
         }
-        .onAppear { if reduceMotion { motion.pause(at:now,speed:rotationSpeed) } }
+        .onAppear {
+            frontImage = front.flatMap { UIImage(data:$0) }; backImage = back.flatMap { UIImage(data:$0) }
+            if reduceMotion { motion.pause(at:now,speed:rotationSpeed) }
+        }
+        .onChange(of:front) { _,data in frontImage = data.flatMap { UIImage(data:$0) } }
+        .onChange(of:back) { _,data in backImage = data.flatMap { UIImage(data:$0) } }
         .onChange(of:reduceMotion) { _,reduce in if reduce { motion.pause(at:now,speed:rotationSpeed) } }
         .background(CardInspectionPresenter(face:$inspected,onClosed:{
             if !reduceMotion { motion.resume(at:now) }
@@ -116,12 +123,15 @@ struct HolographicCard: View {
         var transaction = Transaction(); transaction.disablesAnimations = true
         withTransaction(transaction) { inspected = InspectedCardFace(data:data,name:isFront ? "Front":"Back",origin:origin,initialZoom:min(8,max(1,zoom))) }
     }
-    private func face(_ data: Data?,time: Double) -> some View {
+    private func face(_ image: UIImage?,time: Double) -> some View {
         GeometryReader { geometry in
-            let imageSize = data.flatMap { UIImage(data:$0)?.size } ?? CGSize(width:5,height:7)
+            let imageSize = image?.size ?? CGSize(width:5,height:7)
             let scale = min(geometry.size.width/imageSize.width,geometry.size.height/imageSize.height)
             let size = CGSize(width:imageSize.width*scale,height:imageSize.height*scale)
-            PhotoView(data:data).frame(width:size.width,height:size.height)
+            Group {
+                if let image { Image(uiImage:image).resizable().scaledToFit() }
+                else { PhotoView(data:nil) }
+            }.frame(width:size.width,height:size.height)
                 .background(.black).clipShape(RoundedRectangle(cornerRadius:14))
                 .colorEffect(ShaderLibrary.cardFoil(.float2(size),.float(reduceMotion || motion.mode != .spinning ? 0:Float(time.truncatingRemainder(dividingBy:3600)))),isEnabled:!reduceMotion && motion.mode == .spinning)
                 .overlay(RoundedRectangle(cornerRadius:14).stroke(.white.opacity(0.3),lineWidth:0.75))

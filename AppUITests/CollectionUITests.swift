@@ -44,7 +44,7 @@ import XCTest
         XCTAssertTrue(app.staticTexts["Scan back of card"].waitForExistence(timeout:10))
         XCTAssertTrue(app.staticTexts["Front captured"].exists)
         let backGuide = XCTAttachment(screenshot:app.screenshot()); backGuide.name = "Back scan with persistent front confirmation"; backGuide.lifetime = .keepAlways; add(backGuide)
-        // Hosted simulators can take over 45 seconds for both faces and four orientations.
+        // Recognition is deterministic here; real Vision runs in native image tests.
         // Stop here on failure instead of issuing invalid UI actions.
         guard app.staticTexts["UI Rookie"].waitForExistence(timeout:90) else {
             XCTFail("Both card faces did not finish recognition")

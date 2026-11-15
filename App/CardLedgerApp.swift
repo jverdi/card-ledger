@@ -159,6 +159,9 @@ struct CollectionView: View {
         var services = ScanServices.live()
         #if DEBUG
         if ProcessInfo.processInfo.environment["CARD_LEDGER_SCAN_FIXTURE"] == "1" {
+            // UI tests exercise navigation with deterministic recognition. Native
+            // image tests separately run real Vision on all orientations and photos.
+            services.process = { face in PhotoResult(original:face.original,corrected:face.preview ?? face.original,text:"UI fixture card",crop:face.crop) }
             services.identify = { _ in ScanFixture.identity }
             services.canLookup = false
             services.minimumReveal = 6 // Give UI automation time to inspect the animated reveal.
