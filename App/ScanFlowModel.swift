@@ -38,7 +38,6 @@ struct ScanServices {
     @Published var captureError: String?
     @Published var saveError: String?
     @Published private(set) var importing = false
-    var onAnalysisComplete: ((Card) -> Void)?
     private var cancelled = false
     private var front: CapturedFace?
     private var back: CapturedFace?
@@ -149,7 +148,6 @@ struct ScanServices {
             try await pause(max(0,max(services.minimumReveal,services.revealDuration) - Date().timeIntervalSince(revealedAt)))
             try Task.checkCancellation()
             stage = .review
-            onAnalysisComplete?(card)
         } catch { }
     }
     func continueToCollection(replacing id: UUID? = nil) {

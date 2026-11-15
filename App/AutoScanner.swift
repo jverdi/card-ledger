@@ -227,6 +227,7 @@ final class AutoScanCamera: NSObject, ObservableObject, AVCaptureVideoDataOutput
         queue.async { self.captureAllowed = true; self.enabled = true; self.gate.restartHold(); self.refocus(at:self.focusPoint) }
     }
     // Keep observing departures during the brief batch reveal, then arm a fresh front.
+    func pauseCapture() { queue.async { self.captureAllowed = false; self.gate.restartHold() } }
     func armNextFront() {
         queue.async {
             self.frontCaptured = false; self.captureAllowed = true; self.enabled = true

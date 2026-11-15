@@ -104,7 +104,7 @@ struct BatchScanView: View {
                 }
                 Text("\(captured) captured · \(coordinator.pendingCount(store)) processing · \(coordinator.duplicateCount(store)) duplicates to review")
                     .font(.caption).accessibilityIdentifier("batch.count")
-                Button("Review batch") { review = true }.disabled(stage == .failed).padding(.bottom,12)
+                Button("Review batch") { review = true }.disabled(stage == .failed || stage == .flip || stage == .back).padding(.bottom,12)
             }.padding(.horizontal,22)
         }.foregroundStyle(.white).tint(.cyan).preferredColorScheme(.dark)
             .onAppear { camera.continuous = true; camera.onCapture = receive; coordinator.resume(store:store); UIApplication.shared.isIdleTimerDisabled = true; startCamera() }
@@ -130,10 +130,11 @@ struct BatchScanView: View {
                 if phase == .active && !review { startCamera() } else { camera.suspend() }
             }
             .onChange(of:backPressure) { _,blocked in
-                if !blocked && stage == .front { camera.armNextFront() }
+                if stage == .front { if blocked { camera.pauseCapture() } else { camera.armNextFront() } }
             }
             .sheet(isPresented:$review) { BatchReviewView(coordinator:coordinator).environmentObject(store) }
             .onChange(of:review) { _,open in if open { camera.suspend() } else if scenePhase == .active { startCamera() } }
+            .onChange(of:finishPartial) { _,open in if open { camera.suspend() } else if scenePhase == .active { startCamera() } }
             .confirmationDialog(stage == .failed ? "Unsaved photos will be discarded." : "Discard the unfinished card? Saved pairs will keep processing.",isPresented:$finishPartial,titleVisibility:.visible) {
                 Button("Discard unfinished card and finish",role:.destructive) { dismiss() }
                 Button("Keep scanning",role:.cancel) { }
@@ -161,9 +162,10 @@ struct BatchScanView: View {
         if ProcessInfo.processInfo.environment["CARD_LEDGER_BATCH_FIXTURE"] == "1" { return }
         #endif
         camera.start()
+        if stage == .front && backPressure { camera.pauseCapture() }
     }
     private func receive(_ face: CapturedFace) {
-        guard scenePhase == .active, !review, !finishPartial else { return }
+        guard scenePhase == .active, !review else { return }
         if stage == .front {
             guard !backPressure else { return }
             pair = Card(); pair.front = face.original; pair.frontCrop = face.crop; pair.thumbnail = face.preview

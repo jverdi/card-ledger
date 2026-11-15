@@ -12,7 +12,7 @@ import XCTest
             Identity(player:"Rookie",team:"Team",year:"2026",manufacturer:"Brand",set:"Set",number:"1",variant:"Base")
         },lookup:{ _ in throw ScanFailure.timeout },canLookup:true,revealDuration:0,minimumReveal:0)
     }
-    func wait(_ predicate: () -> Bool) async throws {
+    func wait(_ predicate: @escaping () -> Bool) async throws {
         for _ in 0..<200 { if predicate() { return }; try await Task.sleep(for:.milliseconds(10)) }
         XCTFail("Batch processing did not finish")
     }
