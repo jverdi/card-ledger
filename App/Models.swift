@@ -209,7 +209,7 @@ extension Card {
         var next = cards.filter { $0.id != scanned.id }
         var result = scanned; result.batchState = nil
         if let id {
-            guard let existing = next.first(where: { $0.id == id }), CardDuplicates.exactMatch(scanned, existing) else { throw ScanSaveError.matchChanged }
+            guard let existing = next.first(where: { $0.id == id }), CardDuplicates.needsReview(scanned, existing) else { throw ScanSaveError.matchChanged }
             result = CardDuplicates.replacing(existing, with: result)
             next.removeAll { $0.id == id }
         }

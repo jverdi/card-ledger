@@ -222,7 +222,7 @@ struct BatchReviewView: View {
             }.navigationTitle("Batch scans")
                 .toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { dismiss() } } }
                 .sheet(item:$selected) { card in
-                    DuplicateScanReview(matches:CardDuplicates.matches(for:card,in:store.cards),addDuplicate:{ resolve(card) },overwrite:{ resolve(card,replacing:$0) },discard:{
+                    DuplicateScanReview(scanned:card,matches:CardDuplicates.matches(for:card,in:store.cards),addDuplicate:{ resolve(card) },overwrite:{ resolve(card,replacing:$0) },discard:{
                         do { try store.delete(card.id); selected = nil } catch { self.error = error.localizedDescription }
                     })
                     .alert("Could not save choice",isPresented:Binding(get:{ error != nil },set:{ if !$0 { error = nil } })) { Button("OK") { error = nil } } message: { Text(error ?? "") }

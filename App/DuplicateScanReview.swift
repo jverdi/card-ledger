@@ -1,24 +1,36 @@
 import SwiftUI
 
 struct DuplicateScanReview: View {
+    let scanned: Card
     let matches: [Card]
+    private var exact: Bool { matches.allSatisfy { CardDuplicates.exactMatch(scanned,$0) } }
     let addDuplicate: () -> Void
     let overwrite: (UUID) -> Void
     let discard: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var selected: UUID?
-    init(matches: [Card],addDuplicate: @escaping () -> Void,overwrite: @escaping (UUID) -> Void,discard: @escaping () -> Void) {
-        self.matches = matches; self.addDuplicate = addDuplicate; self.overwrite = overwrite; self.discard = discard
+    init(scanned: Card,matches: [Card],addDuplicate: @escaping () -> Void,overwrite: @escaping (UUID) -> Void,discard: @escaping () -> Void) {
+        self.scanned = scanned; self.matches = matches; self.addDuplicate = addDuplicate; self.overwrite = overwrite; self.discard = discard
         _selected = State(initialValue:matches.count == 1 ? matches[0].id : nil)
     }
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment:.leading,spacing:20) {
-                    Label("Exact match found",systemImage:"rectangle.on.rectangle")
+                    Label(exact ? "Exact match found" : "Possible duplicate",systemImage:"rectangle.on.rectangle")
                         .font(.title2.bold()).accessibilityIdentifier("scan.duplicate.title")
-                    Text(matches.count == 1 ? "This card is already in your collection." : "You have \(matches.count) matching copies. Select a copy if you want to overwrite it.")
+                    Text(exact ? (matches.count == 1 ? "This card is already in your collection." : "You have \(matches.count) matching copies. Select a copy if you want to overwrite it.") : "This scan resembles a card in your collection, but some details differ or are missing. Compare the artwork and variant before choosing.")
                         .foregroundStyle(.secondary)
+                    if !exact {
+                        HStack(spacing:12) {
+                            PhotoView(data:scanned.thumbnail ?? scanned.front).frame(width:70,height:98)
+                            VStack(alignment:.leading,spacing:4) {
+                                Text("New scan").font(.caption).foregroundStyle(.secondary)
+                                Text(scanned.identity.player).font(.headline)
+                                Text([scanned.identity.year,scanned.identity.manufacturer,scanned.identity.set,scanned.identity.number,scanned.identity.variant].filter { !$0.isEmpty }.joined(separator:" · ")).font(.caption)
+                            }
+                        }.accessibilityIdentifier("scan.duplicate.newScan")
+                    }
                     ForEach(matches) { card in
                         Button { selected = card.id } label: {
                             HStack(spacing:12) {
@@ -49,8 +61,9 @@ struct DuplicateScanReview: View {
                             .accessibilityIdentifier("scan.duplicate.discard")
                     }.controlSize(.large).frame(maxWidth:.infinity)
                 }.padding(24)
-            }.navigationTitle("Already in your collection").navigationBarTitleDisplayMode(.inline)
+            }.navigationTitle(exact ? "Already in your collection" : "Review possible duplicate").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement:.cancellationAction) { Button("Back") { dismiss() } } }
         }
     }
 }
+

@@ -17,6 +17,14 @@ import Security
             if fresh && (ProcessInfo.processInfo.environment["CARD_LEDGER_DUPLICATE_FIXTURE"] == "1" || ProcessInfo.processInfo.environment["CARD_LEDGER_PRICING_FIXTURE"] == "1" || ProcessInfo.processInfo.environment["CARD_LEDGER_VIEWER_FIXTURE"] == "1") {
                 var card = Card(); card.identity = ScanFixture.identity
                 card.front = ScanFixture.image(label:"EXISTING FRONT"); card.back = ScanFixture.image(label:"EXISTING BACK")
+                if ProcessInfo.processInfo.environment["CARD_LEDGER_NOISY_DUPLICATE_FIXTURE"] == "1" {
+                    card.identity.set = "Splayers"
+                    card.front = ScanFixture.image(label:"FRONT")
+                    if let cg = card.front.flatMap({ UIImage(data:$0)?.cgImage }) {
+                        let crop = CropSelection(points:[CropPoint(x:110.0/600,y:180.0/900),CropPoint(x:490.0/600,y:180.0/900),CropPoint(x:490.0/600,y:712.0/900),CropPoint(x:110.0/600,y:712.0/900)])
+                        card.thumbnail = try? Imaging.cropJPEG(cg,crop:crop)
+                    }
+                }
                 card.notes = "Keep these notes"; card.location = "Binder A"
                 if ProcessInfo.processInfo.environment["CARD_LEDGER_DUPLICATE_FIXTURE"] == "1" { card.manualValue = 12.34 }
                 try? store.save(card)
@@ -172,7 +180,7 @@ struct CollectionView: View {
     private func finishScan(_ card: Card) {
         do {
             try withAnimation(.spring(response:0.7,dampingFraction:0.88)) {
-                let saved = try store.saveScan(card,replacing:scan?.replacingCardID)
+                let saved = try store.saveScan(card,replacing:scan?.replacingCardID,duplicateConfirmed:scan?.duplicateConfirmed ?? false)
                 scan = nil; status = saved.status; inserted = saved.id
             }
             UINotificationFeedbackGenerator().notificationOccurred(.success)

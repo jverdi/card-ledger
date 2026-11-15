@@ -1,13 +1,14 @@
 import XCTest
 
 @MainActor final class DuplicateUITests: XCTestCase {
-    func scanDuplicate() throws -> XCUIApplication {
+    func scanDuplicate(possible: Bool = false) throws -> XCUIApplication {
         continueAfterFailure = false
         executionTimeAllowance = 180
         let app = XCUIApplication()
         app.launchEnvironment["CARD_LEDGER_UI_TEST_STORE"] = UUID().uuidString
         app.launchEnvironment["CARD_LEDGER_SCAN_FIXTURE"] = "1"
         app.launchEnvironment["CARD_LEDGER_DUPLICATE_FIXTURE"] = "1"
+        if possible { app.launchEnvironment["CARD_LEDGER_NOISY_DUPLICATE_FIXTURE"] = "1" }
         app.launch()
         XCTAssertTrue(app.buttons["collection.add"].waitForExistence(timeout:20))
         XCTAssertEqual(rows(app).count,1)
@@ -18,6 +19,10 @@ import XCTest
         XCTAssertTrue(app.buttons["scan.duplicate.add"].waitForExistence(timeout:5))
         XCTAssertTrue(app.buttons["scan.duplicate.overwrite"].isEnabled)
         XCTAssertTrue(app.buttons["scan.duplicate.discard"].exists)
+        if possible {
+            XCTAssertTrue(app.staticTexts["Possible duplicate"].exists)
+            XCTAssertTrue(app.descendants(matching:.any)["scan.duplicate.newScan"].exists)
+        }
         return app
     }
     func rows(_ app: XCUIApplication) -> XCUIElementQuery { app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","card.row.")) }
@@ -49,4 +54,33 @@ import XCTest
         app.terminate(); app.launch()
         XCTAssertTrue(app.buttons["collection.add"].waitForExistence(timeout:20)); XCTAssertEqual(rows(app).count,1)
     }
+    func testNoisyMetadataPossibleDuplicateRequiresChoiceAndCanAdd() throws {
+        let app = try scanDuplicate(possible:true)
+        let screenshot = XCTAttachment(screenshot:app.screenshot()); screenshot.name = "Artwork match despite inconsistent OCR"; screenshot.lifetime = .keepAlways; add(screenshot)
+        app.buttons["scan.duplicate.add"].tap()
+        XCTAssertTrue(app.buttons["collection.add"].waitForExistence(timeout:10))
+        XCTAssertEqual(rows(app).count,2)
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.buttons["collection.add"].waitForExistence(timeout:20)); XCTAssertEqual(rows(app).count,2)
+    }
+    func testNoisyMetadataPossibleDuplicateCanOverwrite() throws {
+        let app = try scanDuplicate(possible:true)
+        app.buttons["scan.duplicate.overwrite"].tap()
+        XCTAssertTrue(app.buttons["collection.add"].waitForExistence(timeout:10))
+        XCTAssertEqual(rows(app).count,1)
+        XCTAssertTrue(rows(app).firstMatch.label.contains("12.34"))
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.buttons["collection.add"].waitForExistence(timeout:20)); XCTAssertEqual(rows(app).count,1)
+    }
+    func testNoisyMetadataPossibleDuplicateCanDiscard() throws {
+        let app = try scanDuplicate(possible:true)
+        app.buttons["scan.duplicate.discard"].tap()
+        XCTAssertTrue(app.buttons["collection.add"].waitForExistence(timeout:10))
+        XCTAssertEqual(rows(app).count,1)
+        XCTAssertTrue(rows(app).firstMatch.label.contains("Splayers"))
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.buttons["collection.add"].waitForExistence(timeout:20)); XCTAssertEqual(rows(app).count,1)
+    }
+
 }
+

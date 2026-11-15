@@ -35,7 +35,7 @@ import XCTest
     func testAddDuplicatePreservesBothIndependentEntries() throws {
         let path = file(), existing = card(), scanned = card()
         let store = CollectionStore(file:path); try store.save(existing)
-        let added = try store.saveScan(scanned)
+        let added = try store.saveScan(scanned,duplicateConfirmed:true)
         XCTAssertEqual(added.id,scanned.id)
         XCTAssertEqual(Set(CollectionStore(file:path).cards.map(\.id)),Set([existing.id,scanned.id]))
     }
@@ -71,3 +71,4 @@ import XCTest
         XCTAssertTrue(store.cards.isEmpty)
     }
 }
+

@@ -179,8 +179,8 @@ struct ScanFlowView: View {
             }
             .onChange(of:model.importing) { _,busy in if !busy && model.scanning && !choosingPhoto { startCamera() } }
             .sheet(isPresented:$duplicateReview) {
-                DuplicateScanReview(matches:duplicates,
-                    addDuplicate:{ duplicateReview = false; model.continueToCollection() },
+                DuplicateScanReview(scanned:model.card,matches:duplicates,
+                    addDuplicate:{ duplicateReview = false; model.continueToCollection(duplicateConfirmed:true) },
                     overwrite:{ id in duplicateReview = false; model.continueToCollection(replacing:id) },
                     discard:{ duplicateReview = false; close() })
             }
@@ -268,7 +268,7 @@ struct ScanFlowView: View {
                     // Keep the notice and action slots in the layout throughout
                     // processing. Inserting them at completion recenters this
                     // stack and can move Continue during the user's first tap.
-                    Label("Already in your collection",systemImage:"rectangle.on.rectangle")
+                    Label(duplicates.allSatisfy { CardDuplicates.exactMatch(model.card,$0) } ? "Already in your collection" : "Possible duplicate found",systemImage:"rectangle.on.rectangle")
                         .font(.subheadline).foregroundStyle(.orange).accessibilityIdentifier("scan.duplicate.notice")
                         .opacity(model.canContinue && !duplicates.isEmpty ? 1:0)
                         .accessibilityHidden(!model.canContinue || duplicates.isEmpty)
@@ -323,7 +323,11 @@ struct ScanFlowView: View {
 
 #if DEBUG
 enum ScanFixture {
-    static var identity: Identity { Identity(player:"UI Rookie",team:"Brooklyn",year:"2026",manufacturer:"Test Brand",set:"Test Set",number:"1",variant:"Base",grade:"Raw") }
+    static var identity: Identity {
+        if ProcessInfo.processInfo.environment["CARD_LEDGER_NOISY_DUPLICATE_FIXTURE"] == "1" {
+            return Identity(player:"Cam Schlittler",team:"New York Yankees",year:"2022",manufacturer:"Topps",set:"Cmp154977",number:"",variant:"")
+        }
+        return Identity(player:"UI Rookie",team:"Brooklyn",year:"2026",manufacturer:"Test Brand",set:"Test Set",number:"1",variant:"Base",grade:"Raw") }
     static func image(label:String) -> Data {
         UIGraphicsImageRenderer(size:CGSize(width:600,height:900)).image { context in
             UIColor.darkGray.setFill(); context.fill(CGRect(x:0,y:0,width:600,height:900))
