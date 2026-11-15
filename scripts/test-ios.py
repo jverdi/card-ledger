@@ -27,7 +27,7 @@ try:
         text=True, timeout=60).strip()
     run(['xcrun', 'simctl', 'boot', device_id], 60)
     try:
-        run(['xcrun', 'simctl', 'bootstatus', device_id, '-b'], 90)
+        run(['xcrun', 'simctl', 'bootstatus', device_id, '-b'], 180)
     except subprocess.TimeoutExpired:
         # Only startup is retried; failed tests remain failures.
         run(['xcrun', 'simctl', 'shutdown', device_id], 60)

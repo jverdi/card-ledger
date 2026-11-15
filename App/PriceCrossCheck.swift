@@ -48,7 +48,17 @@ struct PriceCrossCheckEditor: View {
                 Section("Your 130 Point reference") {
                     MoneyField(title:"Reference price (USD)",value:$value).accessibilityIdentifier("pricing.referenceValue")
                     TextField("Sale or results link (optional)",text:$source).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    Toggle("I checked the exact card, grade and USD price",isOn:$verified).accessibilityIdentifier("pricing.referenceVerified")
+                    Button { verified.toggle() } label: {
+                        HStack(alignment:.top,spacing:12) {
+                            Image(systemName:verified ? "checkmark.circle.fill":"circle")
+                                .foregroundStyle(verified ? Color.indigo:Color.secondary)
+                            Text("I checked the exact card, grade and USD price")
+                                .foregroundStyle(.primary)
+                            Spacer(minLength:0)
+                        }.frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                        .accessibilityIdentifier("pricing.referenceVerified")
+                        .accessibilityValue(verified ? "Verified":"Not verified")
                     Text("Saved separately for comparison. It does not replace or average the CardPricer estimate.").font(.caption)
                 }
             }.navigationTitle("130 Point cross-check").navigationBarTitleDisplayMode(.inline)
