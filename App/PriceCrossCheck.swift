@@ -62,6 +62,6 @@ struct PriceCrossCheckEditor: View {
                 }
                 .onAppear { value = existing?.value; source = existing?.sourceURL ?? "" }
                 .alert("Couldn’t save cross-check",isPresented:Binding(get:{ error != nil },set:{ if !$0 { error = nil } })) { Button("OK") { error = nil } } message:{ Text(error ?? "") }
-        }
+        }.tint(.indigo)
     }
 }

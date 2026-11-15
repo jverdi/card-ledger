@@ -59,7 +59,7 @@ struct CardPricingReview: View {
             } message: { Text("Only confirm if the set, variation and grade match your card. CardPricer’s estimate may have limited sales evidence.") }
             .alert("Price unavailable",isPresented:Binding(get:{ error != nil },set:{ if !$0 { error = nil } })) { Button("OK") { error = nil } } message:{ Text(error ?? "") }
             .onDisappear { work?.cancel() }
-        }
+        }.tint(.indigo)
     }
     private func accept(_ candidate: PricerCard) {
         busy = true

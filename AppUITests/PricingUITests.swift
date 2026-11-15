@@ -22,7 +22,12 @@ import XCTest
         reveal(app,"pricing.crossCheck").tap()
         let field = app.textFields["pricing.referenceValue"]
         XCTAssertTrue(field.waitForExistence(timeout:5)); field.tap(); field.typeText("20")
-        app.switches["pricing.referenceVerified"].tap()
+        let done = app.buttons["money.done"]
+        XCTAssertTrue(done.waitForExistence(timeout:5)); done.tap()
+        let verified = app.switches["pricing.referenceVerified"]
+        for _ in 0..<3 { if verified.isHittable { break }; app.swipeUp() }
+        verified.tap()
+        XCTAssertEqual(verified.value as? String,"1")
         XCTAssertTrue(app.buttons["pricing.referenceSave"].isEnabled); app.buttons["pricing.referenceSave"].tap()
         XCTAssertTrue(app.staticTexts["11% below CardPricer"].waitForExistence(timeout:5))
         let shot = XCTAttachment(screenshot:app.screenshot()); shot.name = "CardPricer estimate and separate 130 Point reference"; shot.lifetime = .keepAlways; add(shot)

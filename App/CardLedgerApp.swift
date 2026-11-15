@@ -373,10 +373,32 @@ struct SettingsView: View {
 struct MoneyField: View {
     let title: String
     @Binding var value: Decimal?
+    @State private var text = ""
+    @FocusState private var focused: Bool
     private static let formatter: NumberFormatter = {
         let formatter = NumberFormatter(); formatter.numberStyle = .decimal
         formatter.minimum = 0; formatter.maximumFractionDigits = 2; formatter.generatesDecimalNumbers = true
         return formatter
     }()
-    var body: some View { TextField(title, value: $value, formatter: Self.formatter).keyboardType(.decimalPad) }
+    private func syncText() {
+        text = value.flatMap { Self.formatter.string(from:NSDecimalNumber(decimal:$0)) } ?? ""
+    }
+    var body: some View {
+        TextField(title,text:Binding(get:{ text },set:{ input in
+            text = input
+            value = Self.formatter.number(from:input)?.decimalValue
+        }))
+        .keyboardType(.decimalPad).focused($focused)
+        .onAppear { syncText() }
+        .onChange(of:value) { _,_ in if !focused { syncText() } }
+        .onChange(of:focused) { _,active in if !active { syncText() } }
+        .toolbar {
+            ToolbarItemGroup(placement:.keyboard) {
+                if focused {
+                    Spacer()
+                    Button("Done") { focused = false }.accessibilityIdentifier("money.done")
+                }
+            }
+        }
+    }
 }
