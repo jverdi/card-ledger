@@ -12,18 +12,18 @@ enum ScanFailure: LocalizedError {
 struct ScanServices {
     var process: (CapturedFace) async throws -> PhotoResult
     var identify: (String) async throws -> Identity
-    var lookup: (Identity) async throws -> Research
+    var lookup: (Identity) async throws -> CardPricing
     var canLookup: Bool
     var revealDuration: Double = 1.1
     var spinnerDelay: Double = 3
     var minimumReveal: Double = 2
     var collapseDuration: Double = 0.65
     var confirmationDuration: Double = 2.0
-    static func live(workerURL: String) -> Self {
+    static func live() -> Self {
         Self(process: { try await Imaging.process($0.original, crop: $0.crop, automaticallyOrient:true) },
              identify: { try await Recognizer.identify(text: $0) },
-             lookup: { try await ResearchClient.lookup($0, base: workerURL) },
-             canLookup: ResearchClient.configured(base: workerURL))
+             lookup: { try await PricingService.lookup($0) },
+             canLookup: true)
     }
 }
 
@@ -125,14 +125,14 @@ struct ScanServices {
             do {
                 let result = try await services.lookup(card.identity)
                 try Task.checkCancellation()
-                card.research = result
-                if result.estimate == nil { card.scanNote = "No reliable price found. Tap to review." }
+                card.pricing = result
+                if result.usableValue == nil { card.scanNote = result.summary }
             } catch {
                 guard !Task.isCancelled else { return }
-                card.scanNote = "Price unavailable. Tap to retry in card details."
+                card.scanNote = error.localizedDescription
             }
         } else if card.scanNote == nil {
-            card.scanNote = services.canLookup ? "Identity needs review before pricing." : "Price unavailable · connect pricing in Settings."
+            card.scanNote = services.canLookup ? "Identity needs review before pricing." : "No CardPricer price available."
         }
         pricePending = false; spinner?.cancel(); showPriceSpinner = false
         do {

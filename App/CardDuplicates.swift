@@ -40,7 +40,7 @@ extension CollectionStore {
         existing.frontOrientationUncertain = scanned.frontOrientationUncertain
         existing.backOrientationUncertain = scanned.backOrientationUncertain
         existing.ocr = scanned.ocr; existing.frontOCR = scanned.frontOCR; existing.backOCR = scanned.backOCR
-        existing.research = scanned.research; existing.scanNote = scanned.scanNote
+        existing.research = scanned.research; existing.pricing = scanned.pricing; existing.scanNote = scanned.scanNote
         try save(existing)
         return existing
     }

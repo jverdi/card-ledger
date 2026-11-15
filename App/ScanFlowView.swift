@@ -211,12 +211,15 @@ struct ScanFlowView: View {
                 VStack(spacing:10) {
                     if model.stage == .identifying { Text("Reading both sides").font(.subheadline).foregroundStyle(.white.opacity(0.6)).accessibilityIdentifier("scan.identifying") }
                     if showIdentity && !model.pricePending {
-                        if let value = model.card.research?.estimate { Text(value,format:.currency(code:"USD")).font(.title2.bold()) }
+                        if let value = model.card.pricing?.usableValue {
+                            Text(value,format:.currency(code:"USD")).font(.title2.bold())
+                            Link("CardPricer estimate",destination:CardPricerClient.website).font(.caption)
+                        }
                         else { Text(model.card.scanNote ?? "Price unavailable").font(.caption).foregroundStyle(.white.opacity(0.6)).multilineTextAlignment(.center) }
                     }
                     if model.showPriceSpinner {
                         ProgressView().tint(.cyan)
-                        Text("Finding comparable sales").font(.caption).foregroundStyle(.white.opacity(0.6)).accessibilityIdentifier("scan.priceLoading")
+                        Text("Checking CardPricer").font(.caption).foregroundStyle(.white.opacity(0.6)).accessibilityIdentifier("scan.priceLoading")
                     } else if model.canContinue {
                         if !duplicates.isEmpty {
                             Label("Already in your collection",systemImage:"rectangle.on.rectangle")

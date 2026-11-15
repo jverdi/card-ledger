@@ -1,19 +1,24 @@
 import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
+import Security
 
 @main struct CardLedgerApp: App {
     @StateObject var store: CollectionStore
     init() {
+        // Retire credentials from the former private-worker connection.
+        UserDefaults.standard.removeObject(forKey:"workerURL")
+        SecItemDelete([kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"CardLedger.worker"] as CFDictionary)
         #if DEBUG
         if let testStore = ProcessInfo.processInfo.environment["CARD_LEDGER_UI_TEST_STORE"], UUID(uuidString: testStore) != nil {
             let file = URL.applicationSupportDirectory.appending(path:"CardLedgerUITests/"+testStore+"/collection.json")
             let fresh = !FileManager.default.fileExists(atPath:file.path)
             let store = CollectionStore(file:file)
-            if fresh && ProcessInfo.processInfo.environment["CARD_LEDGER_DUPLICATE_FIXTURE"] == "1" {
+            if fresh && (ProcessInfo.processInfo.environment["CARD_LEDGER_DUPLICATE_FIXTURE"] == "1" || ProcessInfo.processInfo.environment["CARD_LEDGER_PRICING_FIXTURE"] == "1") {
                 var card = Card(); card.identity = ScanFixture.identity
                 card.front = ScanFixture.image(label:"EXISTING FRONT"); card.back = ScanFixture.image(label:"EXISTING BACK")
-                card.notes = "Keep these notes"; card.manualValue = 12.34; card.location = "Binder A"
+                card.notes = "Keep these notes"; card.location = "Binder A"
+                if ProcessInfo.processInfo.environment["CARD_LEDGER_DUPLICATE_FIXTURE"] == "1" { card.manualValue = 12.34 }
                 try? store.save(card)
             }
             _store = StateObject(wrappedValue:store)
@@ -111,7 +116,7 @@ struct CollectionView: View {
     private func startScan() {
         filtersExpanded = false; inserted = nil
         query = ""; status = "Owned"; sport = "All sports"; year = "All years"; grading = "All grades"; tag = ""; availability = "All values"; sort = "Newest"
-        var services = ScanServices.live(workerURL:UserDefaults.standard.string(forKey:"workerURL") ?? "")
+        var services = ScanServices.live()
         #if DEBUG
         if ProcessInfo.processInfo.environment["CARD_LEDGER_SCAN_FIXTURE"] == "1" {
             services.identify = { _ in ScanFixture.identity }
@@ -141,7 +146,6 @@ struct PhotoView: View {
 struct CardEditor: View {
     @EnvironmentObject var store: CollectionStore
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("workerURL") private var workerURL = ""
     @State var card: Card
     @State private var photo: PhotosPickerItem?
     @State private var side = "Front"
@@ -150,6 +154,7 @@ struct CardEditor: View {
     @State private var message: String?
     @State private var work: Task<Void, Never>?
     @State private var cropping = false
+    @State private var reviewingPrice = false
     var body: some View { NavigationStack { feedbackContent } }
     private var editorForm: some View {
         Form {
@@ -177,10 +182,13 @@ struct CardEditor: View {
             .onChange(of: card.status) { _, value in card.dispositionDate = value == "Owned" ? nil : Date() }
             .onChange(of: card.identity.details) { _, _ in
                 card.identity.confirmed = false
-                card.research = nil
+                card.research = nil; card.pricing = nil; card.priceCrossCheck = nil
             }
             .sheet(isPresented: $camera) { Camera(onPhoto: capturedPhoto) }
             .sheet(isPresented: $cropping) { cropEditor }
+            .sheet(isPresented:$reviewingPrice) {
+                if let pricing = card.pricing { CardPricingReview(identity:card.identity,initial:pricing) { result in card.pricing = result; card.scanNote = nil; try store.save(card) } }
+            }
             .onDisappear { work?.cancel() }
     }
     private var feedbackContent: some View {
@@ -273,7 +281,7 @@ struct CardEditor: View {
                 .onChange(of: card.manualValue) { _, value in card.manualValueDate = value == nil ? nil : Date() }
             TextField("Source or reason", text: Binding(get: { card.manualValueSource ?? "" }, set: { card.manualValueSource = $0 }))
             if let date = card.manualValueDate { Text("Updated " + date.formatted(date: .abbreviated, time: .omitted)).font(.caption) }
-            Text("Your value takes precedence in collection totals. Clear it to use the saved sold-comps estimate.").font(.caption).foregroundStyle(.secondary)
+            Text("Your value takes precedence in collection totals. Clear it to use the saved CardPricer estimate.").font(.caption).foregroundStyle(.secondary)
         }
     }
     @ViewBuilder private var cropEditor: some View {
@@ -291,33 +299,20 @@ struct CardEditor: View {
         }
     }
     private var researchSection: some View {
-                Section("Market research") {
-                    Text("Research sends the confirmed card details to your private worker. Photos stay on this device.").font(.caption)
-                    Button("Look up current value", systemImage: "magnifyingglass") { run {
-                        let result = try await ResearchClient.lookup(card.identity, base: workerURL)
-                        try Task.checkCancellation()
-                        card.research = result
-                        try store.save(card)
-                    } }.disabled(!card.identity.confirmed)
-                    if let r = card.research {
-                        Text(r.valuation_basis.replacingOccurrences(of: "_", with: " ")).font(.headline)
-                        if let value = r.estimate { Text(value, format: .currency(code: "USD")).font(.title.bold()) }
-                        Text("\(r.sample_count) qualifying sales · \(r.searched_at)").font(.caption)
-                        ForEach(r.limitations, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) }
-                        ForEach(r.observations) { o in
-                            if let url = URL(string: o.source_url), ["https", "http"].contains(url.scheme ?? "") {
-                                Link(destination: url) {
-                                    VStack(alignment: .leading) {
-                                        Text(o.source_name + " · " + o.evidence_type.replacingOccurrences(of: "_", with: " "))
-                                        Text(o.observed_card_description).font(.caption)
-                                        if let amount = o.amount { Text(amount, format: .currency(code: o.currency ?? "USD")) }
-                                        if let reason = o.exclusion_reason { Text(reason).font(.caption) }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+        Section("CardPricer pricing") {
+            Text("Card details are sent to CardPricer’s free service. Photos stay on this device.").font(.caption)
+            Button("Refresh CardPricer price",systemImage:"arrow.clockwise") { run {
+                let result = try await PricingService.lookup(card.identity)
+                try Task.checkCancellation()
+                card.pricing = result; card.scanNote = result.usableValue == nil ? result.summary:nil
+                try store.save(card)
+            } }.disabled(!CardPricerClient.complete(card.identity))
+            if let price = card.pricing {
+                if let value = price.usableValue { Text(value,format:.currency(code:"USD")).font(.title.bold()) }
+                CardPricingSummary(pricing:price)
+                if !price.candidates.isEmpty { Button("Review price match") { reviewingPrice = true } }
+            }
+        }
     }
     func run(_ action: @escaping @MainActor () async throws -> Void) {
         guard !busy else { return }; busy = true
@@ -332,21 +327,29 @@ struct CardEditor: View {
     }
 }
 struct SettingsView: View {
+    @State private var checking = false
+    @State private var checkTask: Task<Void,Never>?
     @EnvironmentObject var store: CollectionStore
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("workerURL") private var workerURL = ""
-    @State private var token = Credentials.read()
     @State private var share: URL?
     @State private var importing = false
     @State private var message: String?
     var body: some View {
         NavigationStack {
             Form {
-                Section("Private pricing worker") {
-                    TextField("https://your-worker.example", text: $workerURL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    SecureField("Device access token", text: $token)
-                    Button("Save connection") { perform { try Credentials.save(token); message = "Connection settings saved." } }
-                    Text("Use your private Codex worker. Your Codex credentials are never stored in the app.").font(.caption)
+                Section("Pricing") {
+                    Text("CardPricer · Free access").accessibilityIdentifier("pricing.provider")
+                    Text("Prices are looked up automatically after scanning. No account, access token or private server is required. Card details are sent to CardPricer; photos stay on this device.").font(.caption)
+                    Link("About CardPricer",destination:CardPricerClient.website)
+                    Button("Test connection") {
+                        checking = true
+                        checkTask = Task { @MainActor in
+                            defer { checking = false }
+                            do { try await CardPricerClient.shared.checkConnection(); try Task.checkCancellation(); message = "Connected to CardPricer’s free service. Individual card coverage varies." }
+                            catch { if !Task.isCancelled { message = error.localizedDescription } }
+                        }
+                    }.disabled(checking)
+                    if checking { ProgressView("Connecting…") }
                 }
                 Section("Your data") {
                     Text("Photos: " + ByteCountFormatter.string(fromByteCount: Int64(store.storageBytes), countStyle: .file))
@@ -357,7 +360,7 @@ struct SettingsView: View {
                     Text("Import adds missing cards without overwriting existing copies. Backups contain your photos and cached research; keep them private.").font(.caption)
                     if let share { ShareLink("Share exported file", item: share) }
                 }
-            }.navigationTitle("Settings").toolbar { Button("Done") { dismiss() } }
+            }.onDisappear { checkTask?.cancel() }.navigationTitle("Settings").toolbar { Button("Done") { dismiss() } }
                 .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in perform {
                     let url = try result.get(); let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
                     try store.restore(Data(contentsOf: url)); message = "Backup imported."

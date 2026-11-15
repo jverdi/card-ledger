@@ -70,20 +70,22 @@ struct Card: Codable, Identifiable {
     var scanNote: String?
     var frontOrientationUncertain: Bool?
     var backOrientationUncertain: Bool?
-    var collectionValue: Double? { manualValue.map { NSDecimalNumber(decimal: $0).doubleValue } ?? research?.estimate }
-    var valueLabel: String { manualValue != nil ? "Your value" : "Sold-comps estimate" }
+    var collectionValue: Double? { manualValue.map { NSDecimalNumber(decimal: $0).doubleValue } ?? pricing?.usableValue }
+    var valueLabel: String { manualValue != nil ? "Your value" : "CardPricer estimate" }
     var front: Data?
     var back: Data?
     var thumbnail: Data?
     var ocr = ""
-    var research: Research?
+    var research: Research? // Legacy backup compatibility; no longer used for pricing.
+    var pricing: CardPricing?
+    var priceCrossCheck: PriceCrossCheck?
     var frontOCR: String?
     var backOCR: String?
     mutating func replaceOCR(_ text: String, front: Bool) {
         if front { frontOCR = text } else { backOCR = text }
         ocr = "Front:\n" + (frontOCR ?? "") + "\nBack:\n" + (backOCR ?? "")
         identity.confirmed = false
-        research = nil
+        research = nil; pricing = nil; priceCrossCheck = nil
     }
 }
 struct Archive: Codable {
@@ -146,6 +148,7 @@ extension Card {
         for card in archive.cards {
             guard ["Owned", "Sold", "Gifted"].contains(card.status),
                   [card.manualValue, card.acquisitionCost, card.dispositionProceeds].allSatisfy({ $0 == nil || ($0! >= 0 && !$0!.isNaN) }),
+                  (card.priceCrossCheck.map { !$0.value.isNaN && $0.value > 0 } ?? true),
                   card.frontCrop?.valid != false, card.backCrop?.valid != false else { throw CocoaError(.fileReadCorruptFile) }
             let photos = card.photoData
             guard photos.values.allSatisfy({ $0.count <= 50 * 1024 * 1024 }) else { throw CocoaError(.fileReadTooLarge) }

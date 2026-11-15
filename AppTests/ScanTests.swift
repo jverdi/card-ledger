@@ -58,7 +58,7 @@ final class CaptureGateTests: XCTestCase {
     }
 }
 @MainActor final class ScanFlowTests: XCTestCase {
-    func services(lookup: @escaping (Identity) async throws -> Research) -> ScanServices {
+    func services(lookup: @escaping (Identity) async throws -> CardPricing) -> ScanServices {
         ScanServices(process:{ PhotoResult(original:$0.original,corrected:$0.original,text:$0.original == Data([1]) ? "Front OCR":"Back OCR") },identify:{ text in
             XCTAssertTrue(text.contains("Front OCR")); XCTAssertTrue(text.contains("Back OCR"))
             return Identity(player:"Rookie",team:"Team",year:"2026",set:"Set",number:"1",variant:"Base")
@@ -90,7 +90,7 @@ final class CaptureGateTests: XCTestCase {
         XCTAssertEqual(model.stage,.review)
         XCTAssertFalse(model.showPriceSpinner)
         XCTAssertNotNil(model.card.front); XCTAssertNotNil(model.card.backCorrected)
-        XCTAssertNil(model.card.research); XCTAssertNotNil(model.card.scanNote)
+        XCTAssertNil(model.card.pricing); XCTAssertNotNil(model.card.scanNote)
     }
     func testCancellationCannotFinishOrInsertAnIncompleteCard() async throws {
         let model = ScanFlowModel(services:services { _ in try await Task.sleep(for:.seconds(10)); throw ScanFailure.timeout })
@@ -119,10 +119,10 @@ final class CaptureGateTests: XCTestCase {
     }
     func testFastPriceSkipsSpinner() async throws {
         let model = ScanFlowModel(services:services { _ in
-            Research(searched_at:"2026-11-14",identity_status:"confirmed",unresolved_fields:[],queries_used:[],observations:[],valuation_basis:"sold_comps",limitations:[],estimate:25,low:20,high:30,sample_count:5)
+            CardPricing(status:.priced,value:25)
         })
         try await feed(model); try await waitUntil { model.canContinue }
-        XCTAssertFalse(model.showPriceSpinner); XCTAssertEqual(model.card.research?.estimate,25)
+        XCTAssertFalse(model.showPriceSpinner); XCTAssertEqual(model.card.pricing?.usableValue,25)
         try await Task.sleep(for:.milliseconds(150))
         XCTAssertEqual(model.stage,.review)
         model.continueToCollection(); model.continueToCollection()
