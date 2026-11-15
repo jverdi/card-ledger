@@ -28,41 +28,57 @@ enum CardOrientation {
         let size = CGSize(width:image.size.width * scale,height:image.size.height * scale)
         let format = UIGraphicsImageRendererFormat(); format.scale = 1
         let sample = UIGraphicsImageRenderer(size:size,format:format).image { _ in image.draw(in:CGRect(origin:.zero,size:size)) }
+        let accurate = try evidence(in:sample,level:.accurate)
+        let decision = choose(accurate)
+        if decision.confident { return decision }
+        // Accurate OCR returns word-level boxes, so a one-word statistics cell
+        // cannot tell us reading direction. Fast OCR provides character positions
+        // and resolves those cases without assuming the back matches the front.
+        let characters = try evidence(in:sample,level:.fast)
+        return choose(characters.map { fast in
+            let prior = accurate.first { $0.quarterTurns == fast.quarterTurns }
+            return OrientationEvidence(quarterTurns:fast.quarterTurns,
+                score:fast.score + (prior?.score ?? 0) * 0.35,
+                characters:fast.characters + (prior?.characters ?? 0))
+        })
+    }
+    static func isUpright(first: CGPoint, last: CGPoint, size: CGSize) -> Bool {
+        let dx = (last.x-first.x) * size.width
+        let dy = (last.y-first.y) * size.height
+        return dx > 4 && abs(dy) < dx * 0.45
+    }
+    private static func evidence(in sample: UIImage, level: VNRequestTextRecognitionLevel) throws -> [OrientationEvidence] {
         var evidence: [OrientationEvidence] = []
         for turns in 0..<4 {
             try Task.checkCancellation()
             let candidateImage = Imaging.rotated(sample,quarterTurns:turns)
             guard let cg = candidateImage.cgImage else { continue }
             let request = VNRecognizeTextRequest()
-            request.recognitionLevel = .accurate
+            request.recognitionLevel = level
             request.usesLanguageCorrection = false
             try VNImageRequestHandler(cgImage:cg,orientation:.up).perform([request])
             var candidate = OrientationEvidence(quarterTurns:turns)
             for observation in request.results ?? [] {
                 guard let text = observation.topCandidates(1).first, text.confidence >= 0.65 else { continue }
-                let letters = text.string.filter { $0.isLetter }
-                let count = letters.count
-                let latin = letters.folding(options:.diacriticInsensitive,locale:Locale(identifier:"en_US_POSIX"))
-                guard count >= 3, latin.unicodeScalars.allSatisfy({ (65...90).contains(Int($0.value)) || (97...122).contains(Int($0.value)) }) else { continue }
-                // Vision may read rotated text. Compare the first and last words' positions
-                // so successfully recognizing upside-down text is not mistaken for upright.
                 let string = text.string
+                let characters = string.filter { $0.isLetter || $0.isNumber }
+                guard characters.count >= 3 else { continue }
                 let startEnd = string.index(after:string.startIndex)
                 let lastStart = string.index(before:string.endIndex)
                 guard let first = try? text.boundingBox(for:string.startIndex..<startEnd),
-                      let last = try? text.boundingBox(for:lastStart..<string.endIndex) else { continue }
-                let dx = (last.boundingBox.midX-first.boundingBox.midX) * candidateImage.size.width
-                let dy = (last.boundingBox.midY-first.boundingBox.midY) * candidateImage.size.height
-                let separatedWords = abs(dx) + abs(dy) > 4
-                if separatedWords && !(dx > 4 && abs(dy) < dx * 0.45) { continue }
-                // Single-word observations have word-precision boxes in accurate mode.
-                // Their confidence still contributes, but cannot outweigh clear multiword evidence.
-                let weight = separatedWords ? 1.0 : 0.35
-                candidate.characters += count
-                candidate.score += Double(min(count,48)) * Double(text.confidence) * weight
+                      let last = try? text.boundingBox(for:lastStart..<string.endIndex),
+                      isUpright(first:CGPoint(x:first.boundingBox.midX,y:first.boundingBox.midY),
+                                last:CGPoint(x:last.boundingBox.midX,y:last.boundingBox.midY),
+                                size:candidateImage.size) else { continue }
+                // Prominent labels carry more weight than tiny legal text printed
+                // on a different axis. Numbers in statistics tables also count.
+                let height = observation.boundingBox.height * candidateImage.size.height / max(sample.size.width,sample.size.height)
+                let prominence = min(2,max(0.35,sqrt(Double(height / 0.025))))
+                candidate.characters += characters.count
+                candidate.score += Double(min(characters.count,48)) * Double(text.confidence) * prominence
             }
             evidence.append(candidate)
         }
-        return choose(evidence)
+        return evidence
     }
 }

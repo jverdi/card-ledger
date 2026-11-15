@@ -50,7 +50,7 @@ import XCTest
         XCTAssertNil(reopened.cards.first?.batchState)
     }
     func testQueuedCardsAreNotDuplicateMatchesAndDiscardLeavesCollectionUntouched() throws {
-        let store = store(); var a = pair(); a.identity = Identity(player:"A",year:"1",manufacturer:"B",set:"C",number:"1",variant:"Base")
+        let store = store(); var a = pair(); a.identity = Identity(player:"A",year:"2024",manufacturer:"B",set:"C",number:"1",variant:"Base")
         var b = a; b.id = UUID(); b.batchState = "duplicate"
         try store.save(a); try store.save(b)
         XCTAssertEqual(CardDuplicates.matches(for:b,in:store.cards).map(\.id),[a.id])

@@ -72,6 +72,8 @@ enum CardBoundaryDetector {
 // Frame timestamps, not callback count, define the hold. A latch prevents repeats.
 struct CaptureGate {
     private var anchor: CardRectangle?
+    private var previousRectangle: CardRectangle?
+    private var previousTime: TimeInterval?
     private var since: TimeInterval?
     private var frames = 0
     private var latched = false
@@ -88,7 +90,7 @@ struct CaptureGate {
         let meanB = b.map(Double.init).reduce(0,+) / Double(b.count)
         return zip(a,b).reduce(0.0) { $0 + abs((Double($1.0)-meanA)-(Double($1.1)-meanB)) } / Double(a.count) / 255
     }
-    mutating func restartHold() { anchor = nil; since = nil; frames = 0; progress = 0 }
+    mutating func restartHold() { anchor = nil; previousRectangle = nil; previousTime = nil; since = nil; frames = 0; progress = 0 }
     mutating func reset(requireDeparture: Bool = false) {
         restartHold(); latched = false
         requiresDeparture = requireDeparture; missingSince = nil; changedSince = nil
@@ -119,10 +121,16 @@ struct CaptureGate {
         guard !latched, captureAllowed, !unchanged, let candidate, focused else { restartHold(); return false }
         if let appearance, let previousAppearance, Self.difference(appearance,previousAppearance) > 0.06 { restartHold() }
         previousAppearance = appearance
-        if let anchor, candidate.movement(from: anchor) < 0.025 { frames += 1 }
+        // Follow gentle hand drift instead of requiring every frame to match the
+        // first frame. Reject fast motion, large total travel and stale frames.
+        let continuous = previousTime.map { time > $0 && time - $0 <= 0.3 } ?? false
+        if continuous, let previousRectangle, let anchor,
+           candidate.movement(from:previousRectangle) < 0.025,
+           candidate.movement(from:anchor) < 0.07 { frames += 1 }
         else { anchor = candidate; since = time; frames = 1 }
-        progress = min(1,max(0,(time - (since ?? time))/0.8))
-        if frames >= 6 && progress >= 1 { latched = true; capturedAppearance = appearance; return true }
+        previousRectangle = candidate; previousTime = time
+        progress = min(1,max(0,(time - (since ?? time))/0.5))
+        if frames >= 5 && progress >= 1 { latched = true; capturedAppearance = appearance; return true }
         return false
     }
 }
@@ -296,14 +304,14 @@ final class AutoScanCamera: NSObject, ObservableObject, AVCaptureVideoDataOutput
                 let point = Self.deviceFocusPoint(portraitPoint:rectangle.center)
                 if hypot(point.x-focusPoint.x,point.y-focusPoint.y) > 0.08 && now-focusUpdatedAt > 0.8 { refocus(at:point) }
             }
-            let focused = now-focusUpdatedAt > 0.35 && device?.isAdjustingFocus != true && device?.isAdjustingExposure != true
+            let focused = now-focusUpdatedAt > 0.35 && device?.isAdjustingFocus != true
             let captured = gate.observe(rectangle,at:now,focused:focused,captureAllowed:captureAllowed,appearance:appearance(of:CIImage(cvPixelBuffer:buffer),rectangle:rectangle))
             let waiting = gate.requiresDeparture, progress = gate.progress
             let hint: String
             if waiting { hint = frontCaptured ? "Flip the card, or briefly move it out of view." : "Slide in the next card. Briefly clear the guide between cards." }
             else if !focused { hint = "Focusing… If blurry, move the phone a little farther away." }
             else if rectangle == nil { hint = "Show all four edges. Try a contrasting background." }
-            else { hint = "Card found. Hold steady…" }
+            else { hint = "Card found. Capturing…" }
             let currentGeneration = generation
             DispatchQueue.main.async { [weak self] in
                 self?.rectangle = rectangle; self?.waitingForFlip = waiting

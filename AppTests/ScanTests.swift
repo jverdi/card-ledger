@@ -45,12 +45,29 @@ final class CaptureGateTests: XCTestCase {
     }
     func testFocusLossResetsHoldAndPortraitFocusCoordinates() {
         var gate = CaptureGate(); let r = rectangle()
-        for i in 0..<8 { XCTAssertFalse(gate.observe(r,at:Double(i)*0.1)) }
+        for i in 0..<5 { XCTAssertFalse(gate.observe(r,at:Double(i)*0.1)) }
         XCTAssertGreaterThan(gate.progress,0.7)
-        XCTAssertFalse(gate.observe(r,at:0.8,focused:false)); XCTAssertEqual(gate.progress,0)
-        for i in 9..<17 { XCTAssertFalse(gate.observe(r,at:Double(i)*0.1)) }
-        XCTAssertTrue(gate.observe(r,at:1.8))
+        XCTAssertFalse(gate.observe(r,at:0.5,focused:false)); XCTAssertEqual(gate.progress,0)
+        for i in 6..<11 { XCTAssertFalse(gate.observe(r,at:Double(i)*0.1)) }
+        XCTAssertTrue(gate.observe(r,at:1.2))
         XCTAssertEqual(AutoScanCamera.deviceFocusPoint(portraitPoint:CGPoint(x:0.2,y:0.7)),CGPoint(x:0.7,y:0.8))
+    }
+    func testGentleHandDriftCapturesWithinHalfASecond() {
+        var gate = CaptureGate(); let base = rectangle()
+        var captured = false
+        for i in 0...5 {
+            var moved = base
+            moved.points = base.points.map { CGPoint(x:$0.x + Double(i)*0.009,y:$0.y + (i%2 == 0 ? 0.004 : 0)) }
+            captured = gate.observe(moved,at:Double(i)*0.1)
+            if i < 5 { XCTAssertFalse(captured) }
+        }
+        XCTAssertTrue(captured,"Normal drift should not restart the hold indefinitely")
+    }
+    func testStaleFrameCannotCompleteCapture() {
+        var gate = CaptureGate()
+        for i in 0..<5 { XCTAssertFalse(gate.observe(rectangle(),at:Double(i)*0.1)) }
+        XCTAssertFalse(gate.observe(rectangle(),at:2))
+        XCTAssertEqual(gate.progress,0)
     }
     func testFocusMustSettle() {
         var gate = CaptureGate()
@@ -153,3 +170,4 @@ final class CaptureGateTests: XCTestCase {
     }
 
 }
+

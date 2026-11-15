@@ -1,26 +1,9 @@
 import SwiftUI
 import PhotosUI
 
-/// Presentation only: keep the scanned identity intact for matching and editing.
 enum CardRowText {
-    static func name(_ raw: String) -> String {
-        let text = raw.trimmingCharacters(in:.whitespacesAndNewlines)
-        guard text == text.uppercased(), text != text.lowercased() else { return text }
-        let initials: Set<String> = ["DJ","AJ","CJ","TJ","JD","JP","JR","II","III","IV","LA","NY","USA","MLB","NBA","NFL","NHL"]
-        return text.split(separator:" ").map { word in
-            let token = String(word)
-            return initials.contains(token) || token.contains(".") ? token : token.capitalized
-        }.joined(separator:" ")
-    }
-    static func brand(_ raw: String) -> String {
-        let key = raw.lowercased().filter { $0.isLetter || $0.isNumber }
-        switch key {
-        case "topps", "thetoppscompanyinc", "toppscompanyinc", "thetoppscompany": return "Topps"
-        case "panini", "paniniamericainc", "paniniamerica", "paninigroup": return "Panini"
-        case "upperdeck", "theupperdeckcompany", "theupperdeckcompanyllc", "upperdeckcompany": return "Upper Deck"
-        default: return name(raw)
-        }
-    }
+    static func name(_ raw: String) -> String { CardMetadata.title(raw) }
+    static func brand(_ raw: String) -> String { CardMetadata.manufacturer(raw) }
     static func metadata(_ identity: Identity) -> String {
         let brand = brand(identity.manufacturer)
         let set = name(identity.set)

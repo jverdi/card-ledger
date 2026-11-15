@@ -32,6 +32,39 @@ final class OrientationTests: XCTestCase {
             XCTAssertTrue(result.text.contains("JORDAN MILLER"))
         }
     }
+    func testPortraitFrontAndSidewaysLandscapeStatisticsBackOrientIndependently() async throws {
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let back = UIGraphicsImageRenderer(size:CGSize(width:840,height:600),format:format).image { context in
+            UIColor.white.setFill(); context.fill(CGRect(x:0,y:0,width:840,height:600))
+            let rows = [["VOLPE","YANKEES","BASEBALL"],["YEAR","HITS","RUNS"],["2023","123","62"],["2024","155","90"],["TOPPS","INCEPTION","ROOKIE"]]
+            for (row,words) in rows.enumerated() {
+                for (column,word) in words.enumerated() {
+                    (word as NSString).draw(at:CGPoint(x:CGFloat(40+column*265),y:CGFloat(80+row*85)),withAttributes:[.font:UIFont.systemFont(ofSize:29,weight:.bold),.foregroundColor:UIColor.black])
+                }
+            }
+        }
+        let frontData = try XCTUnwrap(card().pngData())
+        let backData = try XCTUnwrap(Imaging.rotated(back,quarterTurns:1).pngData())
+        async let frontResult = Imaging.process(frontData,crop:CropSelection(),automaticallyOrient:true)
+        async let backResult = Imaging.process(backData,crop:CropSelection(),automaticallyOrient:true)
+        let (front,reverse) = try await (frontResult,backResult)
+        XCTAssertFalse(front.orientationUncertain); XCTAssertFalse(reverse.orientationUncertain)
+        XCTAssertEqual(front.crop?.quarterTurns,0); XCTAssertEqual(reverse.crop?.quarterTurns,3)
+        let frontImage = try XCTUnwrap(UIImage(data:front.corrected)), backImage = try XCTUnwrap(UIImage(data:reverse.corrected))
+        XCTAssertLessThan(frontImage.size.width,frontImage.size.height)
+        XCTAssertGreaterThan(backImage.size.width,backImage.size.height)
+        XCTAssertEqual(front.original,frontData); XCTAssertEqual(reverse.original,backData)
+        for (name,image) in [("Portrait front",frontImage),("Independently upright landscape back",backImage)] {
+            let attachment = XCTAttachment(image:image); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+        }
+    }
+    func testReadingDirectionRejectsSidewaysUpsideDownAndUndirectedWords() {
+        let size = CGSize(width:840,height:600), first = CGPoint(x:0.2,y:0.5)
+        XCTAssertTrue(CardOrientation.isUpright(first:first,last:CGPoint(x:0.8,y:0.51),size:size))
+        XCTAssertFalse(CardOrientation.isUpright(first:first,last:CGPoint(x:0.2,y:0.8),size:size))
+        XCTAssertFalse(CardOrientation.isUpright(first:first,last:CGPoint(x:0.1,y:0.5),size:size))
+        XCTAssertFalse(CardOrientation.isUpright(first:first,last:first,size:size))
+    }
     func testBlankCardAndAmbiguousEvidenceDoNotGuess() async throws {
         let data = try XCTUnwrap(card(blank:true).pngData())
         let result = try await Imaging.process(data,crop:CropSelection(),automaticallyOrient:true)
@@ -85,3 +118,4 @@ final class OrientationTests: XCTestCase {
         XCTAssertEqual(decoded.frontCrop,card.frontCrop); XCTAssertEqual(decoded.backCrop,card.backCrop)
     }
 }
+

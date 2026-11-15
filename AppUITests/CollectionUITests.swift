@@ -1,6 +1,30 @@
 import XCTest
 
 @MainActor final class CollectionUITests: XCTestCase {
+    func testNoResultsOffersClearFiltersAndCardTypeIncludesNonSports() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment["CARD_LEDGER_UI_TEST_STORE"] = UUID().uuidString
+        app.launchEnvironment["CARD_LEDGER_COLLECTION_FIXTURE"] = "1"
+        app.launch()
+        XCTAssertTrue(app.buttons["collection.add"].waitForExistence(timeout:20))
+        XCTAssertTrue(app.staticTexts["Card type"].exists)
+        XCTAssertFalse(app.staticTexts["Sport"].exists)
+        let search = app.searchFields.firstMatch
+        if !search.isHittable { app.swipeDown() }
+        XCTAssertTrue(search.waitForExistence(timeout:5))
+        search.tap(); search.typeText("No such player")
+        if app.keyboards.buttons["Search"].exists { app.keyboards.buttons["Search"].tap() }
+        XCTAssertTrue(app.staticTexts["No matching cards found"].waitForExistence(timeout:5))
+        XCTAssertFalse(app.staticTexts["Your collection starts here"].exists)
+        if !app.buttons["collection.clearFilters"].isHittable { app.swipeUp() }
+        app.buttons["collection.clearFilters"].tap()
+        let rows = app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","card.row."))
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout:10))
+        XCTAssertEqual(rows.count,2,"Clear filters must also reveal non-Owned cards")
+        XCTAssertTrue(app.buttons["Recently added"].exists)
+        let attachment = XCTAttachment(screenshot:app.screenshot()); attachment.name = "Collection card types and sort order"; attachment.lifetime = .keepAlways; add(attachment)
+    }
     func testGuidedScanAndSavedCardViewerEditRemove() throws {
         continueAfterFailure = false
         executionTimeAllowance = 180 // Includes cold simulator OCR, relaunch and UI animations.
@@ -65,3 +89,4 @@ import XCTest
         let shot = XCTAttachment(screenshot:app.screenshot()); shot.name = "Collection after confirmed removal"; shot.lifetime = .keepAlways; add(shot)
     }
 }
+

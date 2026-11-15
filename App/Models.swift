@@ -13,9 +13,10 @@ struct Identity: Codable, Equatable {
     var variant = ""
     var grade = "Raw"
     var certificate = ""
+    var sourceYear: String? // Original season notation retained for review.
     var confirmed = false
     var title: String { [year, player, set, number].filter { !$0.isEmpty }.joined(separator: " · ") }
-    var details: Identity { var result = self; result.confirmed = false; return result }
+    var details: Identity { var result = normalized; result.confirmed = false; result.sourceYear = nil; return result }
 }
 struct Observation: Codable, Identifiable {
     var id: String { source_url + (sale_date ?? "") + String(amount ?? 0) }
@@ -121,6 +122,7 @@ extension Card {
     var storageBytes: Int { cards.reduce(0) { total, card in total + card.photoData.values.reduce(0) { $0 + $1.count } } }
     init(file: URL? = nil) {
         self.file = file ?? URL.applicationSupportDirectory.appending(path: "CardLedger/collection.json")
+        var needsNormalization = false
         do {
             if FileManager.default.fileExists(atPath: self.file.path) {
                 var archive = try JSONDecoder().decode(Archive.self, from: Data(contentsOf: self.file))
@@ -134,9 +136,14 @@ extension Card {
                     }
                 }
                 try Self.validate(archive)
-                cards = archive.cards
+                cards = archive.cards.map(\.normalizedMetadata)
+                needsNormalization = zip(cards,archive.cards).contains { $0.identity != $1.identity || $0.priceCrossCheck != $1.priceCrossCheck }
             }
             loaded = true
+            if needsNormalization {
+                do { try commit(cards) }
+                catch { self.error = "Metadata cleanup could not be saved. Your original collection is preserved. " + error.localizedDescription }
+            }
         } catch { self.error = "Collection could not be opened. Existing data has been preserved. \(error.localizedDescription)" }
     }
     static func validate(_ archive: Archive) throws {
@@ -171,6 +178,7 @@ extension Card {
     private func commit(_ next: [Card]) throws {
         guard loaded else { throw CocoaError(.fileReadCorruptFile) }
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let next = next.map(\.normalizedMetadata)
         var index = archive(next)
         try Self.validate(index)
         try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
@@ -227,7 +235,7 @@ extension Card {
             let safe = ["=", "+", "-", "@"].contains(String(value.prefix(1))) ? "'" + value : value
             return "\"" + safe.replacingOccurrences(of: "\"", with: "\"\"") + "\""
         }
-        let rows = [["Player", "Team", "Sport", "Year", "Set", "Number", "Variant", "Grade", "Status", "Tags", "Location", "Notes", "Manual value USD", "Value source", "Acquisition cost USD", "Disposition proceeds USD"]] + cards.filter { $0.batchState == nil }.map {
+        let rows = [["Player", "Team", "Card type", "Year", "Set", "Number", "Variant", "Grade", "Status", "Tags", "Location", "Notes", "Manual value USD", "Value source", "Acquisition cost USD", "Disposition proceeds USD"]] + cards.filter { $0.batchState == nil }.map {
             [$0.identity.player, $0.identity.team, $0.identity.sport, $0.identity.year, $0.identity.set, $0.identity.number, $0.identity.variant, $0.identity.grade, $0.status, $0.tags, $0.location, $0.notes, $0.manualValue.map { NSDecimalNumber(decimal: $0).stringValue } ?? "", $0.manualValueSource ?? "", $0.acquisitionCost.map { NSDecimalNumber(decimal: $0).stringValue } ?? "", $0.dispositionProceeds.map { NSDecimalNumber(decimal: $0).stringValue } ?? ""]
         }
         let url = URL.temporaryDirectory.appending(path: "CardLedger.csv")

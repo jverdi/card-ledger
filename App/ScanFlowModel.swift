@@ -109,7 +109,7 @@ struct ScanServices {
             do {
                 let identity = try await services.identify(card.ocr)
                 try Task.checkCancellation()
-                card.identity = identity
+                card.identity = identity.normalized
                 // Automatic extraction is a candidate, never a false claim of user confirmation.
                 card.identity.confirmed = false
             } catch {

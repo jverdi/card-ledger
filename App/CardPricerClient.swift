@@ -115,6 +115,7 @@ actor CardPricerClient {
         let _: Envelope<Status> = try await get("status")
     }
     func lookup(_ identity: Identity) async throws -> CardPricing {
+        let identity = identity.normalized
         guard Self.complete(identity) else { return CardPricing(status:.review,warnings:["Complete the player, year, set, card number and grade in Edit to look up a price."]) }
         var candidates: [PricerCard] = []; var offset = 0; var truncated = false
         // Search player/year rather than concatenating all fields into an undocumented search grammar.
@@ -137,6 +138,7 @@ actor CardPricerClient {
         return CardPricing(status:.review,warnings:[truncated ? "Search limit reached; review the candidate before using a value." : "Several catalog records match. Choose and verify the exact card."],candidates:candidates)
     }
     func price(_ identity: Identity, candidate: PricerCard, confirmed: Bool) async throws -> CardPricing {
+        let identity = identity.normalized
         guard UUID(uuidString:candidate.id) != nil, Self.possibleMatch(candidate,identity) else { throw PricingError.changedMatch }
         let detail: Envelope<Detail> = try await get("cards/" + candidate.id)
         let record = detail.data.record
@@ -222,3 +224,4 @@ enum PricingError: LocalizedError {
         }
     }
 }
+

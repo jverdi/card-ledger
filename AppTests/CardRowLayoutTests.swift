@@ -10,7 +10,7 @@ import UIKit
         XCTAssertEqual(CardRowText.metadata(identity),"2022 · Topps Inception")
         XCTAssertEqual(identity.player,"ANTHONY VOLPE")
         XCTAssertEqual(identity.manufacturer,"THE TOPPS COMPANY, INC.")
-        XCTAssertEqual(CardRowText.name("DJ LEMAHIEU"),"DJ Lemahieu")
+        XCTAssertEqual(CardRowText.name("DJ LEMAHIEU"),"DJ LeMahieu")
         XCTAssertEqual(CardRowText.name("Jacob deGrom"),"Jacob deGrom")
         XCTAssertEqual(CardRowText.metadata(Identity(year:"2026")),"2026")
         XCTAssertEqual(CardRowText.metadata(Identity()),"")

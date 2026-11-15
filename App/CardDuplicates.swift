@@ -8,6 +8,7 @@ enum CardDuplicates {
             .split(whereSeparator:{ $0.isWhitespace }).joined(separator:" ")
     }
     static func key(_ identity: Identity) -> [String]? {
+        let identity = identity.normalized
         let required = [identity.player,identity.sport,identity.year,identity.manufacturer,
                         identity.set,identity.number,identity.variant,identity.grade].map(normalized)
         let unknown: Set<String> = ["","unknown","n/a","na","?","unidentified","not available","unspecified"]

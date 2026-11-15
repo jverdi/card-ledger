@@ -21,6 +21,11 @@ import Security
                 if ProcessInfo.processInfo.environment["CARD_LEDGER_DUPLICATE_FIXTURE"] == "1" { card.manualValue = 12.34 }
                 try? store.save(card)
             }
+            if fresh && ProcessInfo.processInfo.environment["CARD_LEDGER_COLLECTION_FIXTURE"] == "1" {
+                var baseball = Card(); baseball.identity = Identity(player:"ANTHONY VOLPE",sport:"baseball",year:"2023",manufacturer:"Topps",set:"Inception")
+                var pokemon = Card(); pokemon.identity = Identity(player:"PIKACHU",sport:"POKÉMON",year:"2024/25",manufacturer:"Pokémon",set:"Scarlet & Violet"); pokemon.status = "Sold"
+                try? store.save(baseball); try? store.save(pokemon)
+            }
             _store = StateObject(wrappedValue:store)
             return
         }
@@ -33,8 +38,9 @@ struct CollectionView: View {
     @EnvironmentObject var store: CollectionStore
     @State private var query = ""
     @State private var status = "Owned"
-    @State private var sport = "All sports"
-    @State private var sort = "Newest"
+    @State private var sport = "All card types"
+    @State private var sort: CollectionSort = .added
+    @State private var ascending = false
     @State private var year = "All years"
     @State private var grading = "All grades"
     @State private var tag = ""
@@ -50,22 +56,24 @@ struct CollectionView: View {
     @State private var inserted: UUID?
     @State private var filtersExpanded = false
     var visible: [Card] {
-        store.cards.filter { card in
-            card.batchState == nil && (status == "All" || card.status == status) && (sport == "All sports" || card.identity.sport == sport) &&
+        sort.sorted(store.cards.filter { card in
+            card.batchState == nil && (status == "All" || card.status == status) && (sport == "All card types" || card.identity.sport == sport) &&
             (year == "All years" || card.identity.year == year) &&
             (grading == "All grades" || (grading == "Raw" ? card.identity.grade.lowercased() == "raw" : card.identity.grade.lowercased() != "raw" && !card.identity.grade.isEmpty)) &&
             (tag.isEmpty || card.tags.localizedCaseInsensitiveContains(tag)) &&
             (availability == "All values" || (availability == "Valued" ? card.collectionValue != nil : card.collectionValue == nil)) &&
             (query.isEmpty || [card.identity.title, card.identity.team, card.identity.sport, card.tags, card.location].joined(separator: " ").localizedCaseInsensitiveContains(query))
-        }.sorted {
-            switch sort {
-            case "Name": return $0.identity.player.localizedStandardCompare($1.identity.player) == .orderedAscending
-            case "Value": return ($0.collectionValue ?? -1) > ($1.collectionValue ?? -1)
-            case "Year": return $0.identity.year.localizedStandardCompare($1.identity.year) == .orderedDescending
-            default: return $0.added > $1.added
-            }
-        }
+        }, ascending:ascending)
     }
+    private var hasFilters: Bool {
+        (status != "All" && status != "Owned") || sport != "All card types" || year != "All years" || grading != "All grades" || availability != "All values" || !tag.isEmpty || !query.isEmpty
+    }
+    private var collectionIsEmpty: Bool { !store.cards.contains { $0.batchState == nil } }
+    private func clearFilters() {
+        status = "All"; sport = "All card types"; year = "All years"; grading = "All grades"
+        availability = "All values"; tag = ""; query = ""
+    }
+
     var body: some View {
         ZStack {
             collectionContent.allowsHitTesting(scan == nil).accessibilityHidden(scan != nil)
@@ -99,17 +107,34 @@ struct CollectionView: View {
                 }
                 Section {
                     Picker("Status", selection: $status) { ForEach(["Owned", "Sold", "Gifted", "All"], id: \.self) { Text($0) } }
-                    Picker("Sport", selection: $sport) { ForEach(["All sports"] + Array(Set(store.cards.map { $0.identity.sport })).sorted(), id: \.self) { Text($0) } }
-                    Picker("Sort", selection: $sort) { ForEach(["Newest", "Name", "Year", "Value"], id: \.self) { Text($0) } }
+                    Picker("Card type", selection: $sport) { ForEach(["All card types"] + Array(Set(store.cards.filter { $0.batchState == nil }.map { $0.identity.normalized.sport }.filter { !$0.isEmpty })).sorted(), id: \.self) { Text($0) } }
+                    Picker("Sort", selection: $sort) { ForEach(CollectionSort.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
+                        .onChange(of:sort) { _,value in ascending = value == .name }
+                    Picker("Order", selection:$ascending) {
+                        Text(sort.directionLabel(ascending:true)).tag(true)
+                        Text(sort.directionLabel(ascending:false)).tag(false)
+                    }.pickerStyle(.segmented).accessibilityIdentifier("collection.sortDirection")
                     DisclosureGroup("More filters",isExpanded:$filtersExpanded) {
-                        Picker("Year", selection: $year) { ForEach(["All years"] + Array(Set(store.cards.map { $0.identity.year }.filter { !$0.isEmpty })).sorted(), id: \.self) { Text($0) } }
+                        Picker("Year", selection: $year) { ForEach(["All years"] + Array(Set(store.cards.filter { $0.batchState == nil }.map { $0.identity.normalized.year }.filter { !$0.isEmpty })).sorted(), id: \.self) { Text($0) } }
                         Picker("Grade", selection: $grading) { ForEach(["All grades", "Raw", "Graded"], id: \.self) { Text($0) } }
                         Picker("Value", selection: $availability) { ForEach(["All values", "Valued", "Not valued"], id: \.self) { Text($0) } }
                         TextField("Owner or tag", text: $tag)
-                        Button("Reset filters") { status = "Owned"; sport = "All sports"; year = "All years"; grading = "All grades"; availability = "All values"; tag = ""; query = "" }
+                        Button("Clear filters",action:clearFilters)
                     }
                 }
-                if visible.isEmpty { ContentUnavailableView("Your collection starts here", systemImage: "rectangle.stack", description: Text("Tap + to photograph or add a card.")) }
+                if visible.isEmpty {
+                    if !collectionIsEmpty || hasFilters {
+                        ContentUnavailableView {
+                            Label("No matching cards found",systemImage:"line.3.horizontal.decrease.circle")
+                        } description: {
+                            Text("Try another search or clear your filters to see all cards.")
+                        } actions: {
+                            Button("Clear filters",action:clearFilters).accessibilityIdentifier("collection.clearFilters")
+                        }.accessibilityIdentifier("collection.noMatches")
+                    } else {
+                        ContentUnavailableView("Your collection starts here",systemImage:"rectangle.stack",description:Text("Tap + to scan your first card."))
+                    }
+                }
                 ForEach(visible) { card in
                     Button { viewing = card } label: {
                         CardCollectionRow(card:card,namespace:scanFlight).contentShape(Rectangle())
@@ -129,7 +154,7 @@ struct CollectionView: View {
     }
     private func startScan() {
         filtersExpanded = false; inserted = nil
-        query = ""; status = "Owned"; sport = "All sports"; year = "All years"; grading = "All grades"; tag = ""; availability = "All values"; sort = "Newest"
+        query = ""; status = "Owned"; sport = "All card types"; year = "All years"; grading = "All grades"; tag = ""; availability = "All values"; sort = .added; ascending = false
         var services = ScanServices.live()
         #if DEBUG
         if ProcessInfo.processInfo.environment["CARD_LEDGER_SCAN_FIXTURE"] == "1" {
@@ -263,8 +288,12 @@ struct CardEditor: View {
                 Section("Confirm identity") {
                     TextField("Player / card name", text: $card.identity.player).accessibilityIdentifier("card.player")
                     TextField("Team printed on card", text: $card.identity.team)
-                    TextField("Sport", text: $card.identity.sport)
-                    TextField("Year / season", text: $card.identity.year)
+                    TextField("Card type", text: $card.identity.sport)
+                    TextField("Year (season start)", text: $card.identity.year).keyboardType(.numbersAndPunctuation)
+                    Text("Use the starting year: 2024/25 is saved as 2024.").font(.caption).foregroundStyle(.secondary)
+                    if let source = card.identity.sourceYear, source != card.identity.year {
+                        Text("Original year / season: " + source).font(.caption).foregroundStyle(.secondary)
+                    }
                     TextField("Manufacturer", text: $card.identity.manufacturer)
                     TextField("Set", text: $card.identity.set)
                     TextField("Card number", text: $card.identity.number)
