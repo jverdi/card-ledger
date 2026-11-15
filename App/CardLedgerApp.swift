@@ -162,7 +162,7 @@ struct CardEditor: View {
             identitySection
             collectionSection
             manualValueSection
-            researchSection
+            pricingSection
         }
         .disabled(busy)
         .overlay { if busy { VStack(spacing: 12) { ProgressView("Working…"); Button("Cancel operation") { work?.cancel() } }.padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14)) } }
@@ -187,7 +187,7 @@ struct CardEditor: View {
             .sheet(isPresented: $camera) { Camera(onPhoto: capturedPhoto) }
             .sheet(isPresented: $cropping) { cropEditor }
             .sheet(isPresented:$reviewingPrice) {
-                if let pricing = card.pricing { CardPricingReview(identity:card.identity,initial:pricing) { result in card.pricing = result; card.scanNote = nil; try store.save(card) } }
+                if let pricing = card.pricing { CardPricingReview(identity:card.identity,initial:pricing) { result in card.pricing = result; card.scanNote = result.usableValue == nil ? result.summary:nil } }
             }
             .onDisappear { work?.cancel() }
     }
@@ -298,14 +298,13 @@ struct CardEditor: View {
             }
         }
     }
-    private var researchSection: some View {
+    private var pricingSection: some View {
         Section("CardPricer pricing") {
             Text("Card details are sent to CardPricer’s free service. Photos stay on this device.").font(.caption)
             Button("Refresh CardPricer price",systemImage:"arrow.clockwise") { run {
                 let result = try await PricingService.lookup(card.identity)
                 try Task.checkCancellation()
                 card.pricing = result; card.scanNote = result.usableValue == nil ? result.summary:nil
-                try store.save(card)
             } }.disabled(!CardPricerClient.complete(card.identity))
             if let price = card.pricing {
                 if let value = price.usableValue { Text(value,format:.currency(code:"USD")).font(.title.bold()) }
@@ -357,7 +356,7 @@ struct SettingsView: View {
                     Button("Export backup with photos") { perform { share = try store.export() } }
                     Button("Export CSV") { perform { share = try store.csv() } }
                     Button("Import backup") { importing = true }
-                    Text("Import adds missing cards without overwriting existing copies. Backups contain your photos and cached research; keep them private.").font(.caption)
+                    Text("Import adds missing cards without overwriting existing copies. Backups contain your photos, saved prices and references; keep them private.").font(.caption)
                     if let share { ShareLink("Share exported file", item: share) }
                 }
             }.onDisappear { checkTask?.cancel() }.navigationTitle("Settings").toolbar { Button("Done") { dismiss() } }
