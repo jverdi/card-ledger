@@ -21,6 +21,7 @@ import XCTest
         XCTAssertNotEqual(card.value as? String,before,"A swipe must change the paused face")
         card.swipeRight(velocity:.fast); waitForValue(card,"paused")
         XCTAssertEqual(card.value as? String,before)
+        card.tap(); waitForValue(card,"spinning"); card.tap(); waitForValue(card,"paused")
         let design = XCTAttachment(screenshot:app.screenshot()); design.name = "Refined viewer and paused card"; design.lifetime = .keepAlways; add(design)
         card.coordinate(withNormalizedOffset:CGVector(dx:0.35,dy:0.45)).press(forDuration:0.1,
             thenDragTo:card.coordinate(withNormalizedOffset:CGVector(dx:0.7,dy:0.6)),withVelocity:.slow,thenHoldForDuration:0.3)
@@ -52,7 +53,10 @@ import XCTest
         let returned = XCTNSPredicateExpectation(predicate:NSPredicate(format:"label == %@","Scan front of card"),object:app.staticTexts["batch.instruction"])
         returned.isInverted = true
         XCTAssertEqual(XCTWaiter.wait(for:[returned],timeout:3),.completed)
-        XCTAssertTrue(card.exists); card.tap()
+        XCTAssertTrue(card.exists)
+        card.pinch(withScale:1.5,velocity:1)
+        XCTAssertTrue(app.buttons["card.zoom.close"].waitForExistence(timeout:10))
+        app.buttons["card.zoom.close"].tap()
         let next = XCTNSPredicateExpectation(predicate:NSPredicate(format:"label == %@","Scan front of card"),object:app.staticTexts["batch.instruction"])
         XCTAssertEqual(XCTWaiter.wait(for:[next],timeout:10),.completed)
     }
