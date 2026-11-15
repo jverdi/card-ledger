@@ -265,20 +265,29 @@ struct ScanFlowView: View {
                         }
                         else { Text(model.card.scanNote ?? "Price unavailable").font(.caption).foregroundStyle(.white.opacity(0.6)).multilineTextAlignment(.center) }
                     }
-                    if model.showPriceSpinner {
-                        ProgressView().tint(.cyan)
-                        Text("Checking CardPricer").font(.caption).foregroundStyle(.white.opacity(0.6)).accessibilityIdentifier("scan.priceLoading")
-                    } else if model.canContinue {
-                        if !duplicates.isEmpty {
-                            Label("Already in your collection",systemImage:"rectangle.on.rectangle")
-                                .font(.subheadline).foregroundStyle(.orange).accessibilityIdentifier("scan.duplicate.notice")
-                        }
+                    // Keep the notice and action slots in the layout throughout
+                    // processing. Inserting them at completion recenters this
+                    // stack and can move Continue during the user's first tap.
+                    Label("Already in your collection",systemImage:"rectangle.on.rectangle")
+                        .font(.subheadline).foregroundStyle(.orange).accessibilityIdentifier("scan.duplicate.notice")
+                        .opacity(model.canContinue && !duplicates.isEmpty ? 1:0)
+                        .accessibilityHidden(!model.canContinue || duplicates.isEmpty)
+                    ZStack {
                         Button("Continue") {
+                            #if DEBUG
+                            print("Scan Continue activated; duplicate matches: \(duplicates.count)")
+                            #endif
                             if duplicates.isEmpty { model.continueToCollection() }
                             else { duplicateReview = true }
                         }
                             .font(.headline).buttonStyle(.borderedProminent).tint(.cyan).foregroundStyle(.black)
                             .controlSize(.large).accessibilityIdentifier("scan.continue")
+                            .opacity(model.canContinue ? 1:0).disabled(!model.canContinue)
+                            .accessibilityHidden(!model.canContinue)
+                        VStack(spacing:6) {
+                            ProgressView().tint(.cyan)
+                            Text("Checking CardPricer").font(.caption).foregroundStyle(.white.opacity(0.6)).accessibilityIdentifier("scan.priceLoading")
+                        }.opacity(model.showPriceSpinner ? 1:0).accessibilityHidden(!model.showPriceSpinner).allowsHitTesting(false)
                     }
                 }.frame(minHeight:55)
             }
