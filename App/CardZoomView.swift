@@ -30,13 +30,13 @@ struct CardZoomView: View {
                         Spacer(minLength:12)
                         Button(action:close) { Image(systemName:"xmark").frame(width:44,height:44).background(.ultraThinMaterial,in:Circle()) }
                             .accessibilityLabel("Return to rotating card").accessibilityIdentifier("card.zoom.close")
-                    }
+                    }.padding(12).background(.black.opacity(0.72),in:RoundedRectangle(cornerRadius:20))
                     Spacer()
                     HStack(spacing:20) {
                         Button { requestedZoom = max(1,zoom/1.5) } label: { Image(systemName:"minus.magnifyingglass").frame(width:44,height:44) }.accessibilityLabel("Zoom out")
                         Text(zoom,format:.number.precision(.fractionLength(1))).monospacedDigit() + Text("×")
                         Button { requestedZoom = min(8,zoom*1.5) } label: { Image(systemName:"plus.magnifyingglass").frame(width:44,height:44) }.accessibilityLabel("Zoom in")
-                    }.font(.subheadline.weight(.medium)).padding(.horizontal,12).background(.ultraThinMaterial,in:Capsule())
+                    }.font(.subheadline.weight(.medium)).padding(.horizontal,12).background(.black.opacity(0.72),in:Capsule())
                 }.padding(.horizontal,20).padding(.vertical,18)
                     .opacity(entered ? 1:0)
             }.foregroundStyle(.white)
