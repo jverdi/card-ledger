@@ -215,7 +215,7 @@ struct BatchReviewView: View {
                     let duplicates = store.cards.filter { $0.batchState == "duplicate" }
                     if duplicates.isEmpty { Text("No duplicates awaiting review.") }
                     ForEach(duplicates) { card in
-                        Button { selected = card } label: { CardCollectionRow(card:card) }
+                        Button { selected = card } label: { CardCollectionRow(card:card) }.accessibilityIdentifier("batch.duplicate."+card.id.uuidString)
                     }
                 }
             }.navigationTitle("Batch scans")

@@ -270,7 +270,14 @@ final class AutoScanCamera: NSObject, ObservableObject, AVCaptureVideoDataOutput
         bytes.withUnsafeMutableBytes { raw in
             context.render(cropped,toBitmap:raw.baseAddress!,rowBytes:64,bounds:CGRect(x:0,y:0,width:16,height:16),format:.RGBA8,colorSpace:CGColorSpaceCreateDeviceRGB())
         }
-        return stride(from:0,to:bytes.count,by:4).map { UInt8((Int(bytes[$0])+Int(bytes[$0+1])+Int(bytes[$0+2]))/3) }
+        var luminance = [UInt8]()
+        for index in stride(from:0,to:bytes.count,by:4) {
+            let red = Int(bytes[index])
+            let green = Int(bytes[index+1])
+            let blue = Int(bytes[index+2])
+            luminance.append(UInt8((red + green + blue) / 3))
+        }
+        return luminance
     }
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         let now = CACurrentMediaTime()

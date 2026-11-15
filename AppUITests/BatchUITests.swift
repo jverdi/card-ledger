@@ -20,7 +20,7 @@ final class BatchUITests: XCTestCase {
         app.buttons["batch.done"].tap()
         XCTAssertTrue(app.buttons["batch.inbox"].waitForExistence(timeout:15))
         app.buttons["batch.inbox"].tap()
-        app.buttons.containing(.staticText,identifier:"UI Rookie").firstMatch.tap()
+        app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","batch.duplicate.")).firstMatch.tap()
         XCTAssertTrue(app.staticTexts["scan.duplicate.title"].waitForExistence(timeout:10))
         app.buttons["scan.duplicate.add"].tap()
         app.buttons["Done"].tap()
