@@ -59,8 +59,10 @@ struct CardCollectionRow: View {
                 Text(player).font(.headline).foregroundStyle(.primary)
                     .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
                     .fixedSize(horizontal:false,vertical:true).frame(maxWidth:.infinity,alignment:.leading)
-                Image(systemName:"chevron.forward").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
+                if !typeSize.isAccessibilitySize {
+                    Image(systemName:"chevron.forward").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
+                }
             }
             if !team.isEmpty {
                 Text(team).font(.subheadline).foregroundStyle(.secondary).padding(.top,3)
@@ -92,7 +94,9 @@ struct CardCollectionRow: View {
     }
     private func amount(_ value: Double) -> some View {
         Text(value,format:.currency(code:"USD")).font(.subheadline.weight(.semibold))
-            .monospacedDigit().foregroundStyle(.primary).fixedSize(horizontal:false,vertical:true)
+            // Keep currency digits together at the largest accessibility sizes.
+            // Other row text retains its full Dynamic Type size and wraps freely.
+            .monospacedDigit().foregroundStyle(.primary).lineLimit(1).minimumScaleFactor(0.5)
     }
     private var accessibilitySummary: String {
         let price = card.collectionValue.map { $0.formatted(.currency(code:"USD"))+", "+card.valueLabel } ?? "Price unavailable"
