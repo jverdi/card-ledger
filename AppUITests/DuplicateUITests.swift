@@ -3,7 +3,7 @@ import XCTest
 @MainActor final class DuplicateUITests: XCTestCase {
     func scanDuplicate() throws -> XCUIApplication {
         continueAfterFailure = false
-        executionTimeAllowance = 120
+        executionTimeAllowance = 180
         let app = XCUIApplication()
         app.launchEnvironment["CARD_LEDGER_UI_TEST_STORE"] = UUID().uuidString
         app.launchEnvironment["CARD_LEDGER_SCAN_FIXTURE"] = "1"
@@ -12,7 +12,7 @@ import XCTest
         XCTAssertTrue(app.buttons["collection.add"].waitForExistence(timeout:20))
         XCTAssertEqual(rows(app).count,1)
         app.buttons["collection.add"].tap()
-        XCTAssertTrue(app.buttons["scan.continue"].waitForExistence(timeout:50))
+        XCTAssertTrue(app.buttons["scan.continue"].waitForExistence(timeout:90))
         XCTAssertTrue(app.staticTexts["scan.duplicate.notice"].exists || app.descendants(matching:.any)["scan.duplicate.notice"].exists)
         app.buttons["scan.continue"].tap()
         XCTAssertTrue(app.buttons["scan.duplicate.add"].waitForExistence(timeout:5))

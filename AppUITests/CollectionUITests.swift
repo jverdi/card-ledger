@@ -3,7 +3,7 @@ import XCTest
 @MainActor final class CollectionUITests: XCTestCase {
     func testGuidedScanAndSavedCardViewerEditRemove() async throws {
         continueAfterFailure = false
-        executionTimeAllowance = 120 // Includes simulator relaunch, Vision and UI animations.
+        executionTimeAllowance = 180 // Includes cold simulator OCR, relaunch and UI animations.
         let app = XCUIApplication()
         app.launchEnvironment["CARD_LEDGER_UI_TEST_STORE"] = UUID().uuidString
         app.launchEnvironment["CARD_LEDGER_SCAN_FIXTURE"] = "1"
@@ -18,9 +18,9 @@ import XCTest
         XCTAssertTrue(app.staticTexts["Scan back of card"].waitForExistence(timeout:10))
         XCTAssertTrue(app.staticTexts["Front captured"].exists)
         let backGuide = XCTAttachment(screenshot:app.screenshot()); backGuide.name = "Back scan with persistent front confirmation"; backGuide.lifetime = .keepAlways; add(backGuide)
-        // Cold simulator OCR can take over 20 seconds for both faces and four orientations.
+        // Hosted simulators can take over 45 seconds for both faces and four orientations.
         // Stop here on failure; async XCTest otherwise continues issuing invalid UI actions.
-        guard app.staticTexts["UI Rookie"].waitForExistence(timeout:45) else {
+        guard app.staticTexts["UI Rookie"].waitForExistence(timeout:90) else {
             XCTFail("Both card faces did not finish recognition")
             return
         }

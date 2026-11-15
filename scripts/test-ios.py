@@ -38,7 +38,7 @@ try:
          '-destination', 'platform=iOS Simulator,id=' + device_id,
          '-parallel-testing-enabled', 'NO', '-test-timeouts-enabled', 'YES',
          '-default-test-execution-time-allowance', '60',
-         '-maximum-test-execution-time-allowance', '120',
+         '-maximum-test-execution-time-allowance', '180',
          '-resultBundlePath', 'TestResults.xcresult'], 1200)
 except (subprocess.CalledProcessError, subprocess.TimeoutExpired, StopIteration, KeyError) as error:
     print('iOS verification failed: ' + str(error), flush=True)
