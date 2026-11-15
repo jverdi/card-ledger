@@ -86,7 +86,7 @@ struct BatchScanView: View {
                     }
                     if stage == .reveal || stage == .failed {
                         VStack(spacing:16) {
-                            HolographicCard(front:pair.thumbnail ?? pair.front,back:pair.backCorrected ?? pair.back).frame(height:300)
+                            HolographicCard(front:pair.thumbnail ?? pair.front,back:pair.backCorrected ?? pair.back,rotationSpeed:180).frame(height:300)
                                 .accessibilityIdentifier("batch.reveal")
                             Label(stage == .failed ? "Photos not yet saved" : "Both sides saved",systemImage:stage == .failed ? "exclamationmark.triangle":"checkmark.circle.fill")
                                 .foregroundStyle(stage == .failed ? .orange:.green)

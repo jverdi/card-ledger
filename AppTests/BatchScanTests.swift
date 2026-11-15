@@ -79,6 +79,16 @@ final class BatchCaptureGateTests: XCTestCase {
         for i in 80..<100 { if gate.observe(r,at:Double(i)*0.1,appearance:front) { count += 1 } }
         XCTAssertEqual(count,3)
     }
+    func testDeliberateClearPermitsVisuallyIdenticalNextCard() {
+        let r = CardRectangle(points:[CGPoint(x:0.2,y:0.2),CGPoint(x:0.8,y:0.2),CGPoint(x:0.8,y:0.8),CGPoint(x:0.2,y:0.8)],confidence:0.95,pixelSize:CGSize(width:700,height:1000))
+        var gate = CaptureGate(); let face: [UInt8] = [10,100,200,40]
+        var captures = 0
+        for i in 0..<20 { if gate.observe(r,at:Double(i)*0.1,appearance:face) { captures += 1 } }
+        gate.reset(requireDeparture:true)
+        for i in 20..<30 { _ = gate.observe(nil,at:Double(i)*0.1) }
+        for i in 30..<50 { if gate.observe(r,at:Double(i)*0.1,appearance:face) { captures += 1 } }
+        XCTAssertEqual(captures,2)
+    }
     func testBrightnessChangeIsNotAFlip() {
         XCTAssertEqual(CaptureGate.difference([20,60,100,140],[40,80,120,160]),0,accuracy:0.001)
     }

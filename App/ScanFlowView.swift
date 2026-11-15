@@ -34,12 +34,13 @@ struct CardFlight: ViewModifier {
 struct HolographicCard: View {
     let front: Data?
     let back: Data?
+    var rotationSpeed: Double = 43
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var began = Date()
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0/30,paused:reduceMotion)) { timeline in
             let time = timeline.date.timeIntervalSince(began)
-            let angle = reduceMotion ? 0 : time * 43
+            let angle = reduceMotion ? 0 : time * rotationSpeed
             let frontVisible = cos(angle * .pi / 180) >= 0
             ZStack {
                 face(front,time:time).opacity(frontVisible ? 1:0)
@@ -274,3 +275,4 @@ enum ScanFixture {
     }
 }
 #endif
+

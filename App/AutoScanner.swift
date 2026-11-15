@@ -97,6 +97,12 @@ struct CaptureGate {
     }
     mutating func observe(_ rectangle: CardRectangle?, at time: TimeInterval, focused: Bool = true, captureAllowed: Bool = true, appearance: [UInt8]? = nil) -> Bool {
         let candidate = rectangle.flatMap { $0.likelyCard ? $0 : nil }
+        if candidate == nil {
+            if missingSince == nil { missingSince = time }
+            // Deliberately clearing the guide permits visually identical cards,
+            // while a brief detection dropout cannot recapture a stationary side.
+            if time - (missingSince ?? time) >= 0.5 { capturedAppearance = nil }
+        } else { missingSince = nil }
         let unchanged = capturedAppearance.flatMap { old in appearance.map { Self.difference(old,$0) < 0.08 } } ?? false
         if requiresDeparture {
             if let appearance, let capturedAppearance, Self.difference(appearance,capturedAppearance) >= 0.12 {
