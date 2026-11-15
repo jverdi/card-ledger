@@ -77,6 +77,10 @@ enum CardOrientation {
                 candidate.characters += characters.count
                 candidate.score += Double(min(characters.count,48)) * Double(text.confidence) * prominence
             }
+            #if DEBUG
+            let confidences = (request.results ?? []).compactMap { $0.topCandidates(1).first?.confidence }.map { String(format:"%.2f",$0) }.joined(separator:",")
+            print("Orientation level=\(level.rawValue) turns=\(turns) score=\(candidate.score) characters=\(candidate.characters) confidences=[\(confidences)]")
+            #endif
             evidence.append(candidate)
         }
         return evidence

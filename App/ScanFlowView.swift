@@ -10,8 +10,9 @@ enum CardRowText {
         let product: String
         if set.isEmpty { product = brand }
         else if brand.isEmpty || set.localizedCaseInsensitiveCompare(brand) == .orderedSame || set.lowercased().hasPrefix(brand.lowercased()+" ") { product = set }
+        else if brand.lowercased().hasPrefix(set.lowercased()+" ") { product = brand }
         else { product = brand + " " + set }
-        return [identity.year.trimmingCharacters(in:.whitespacesAndNewlines),product].filter { !$0.isEmpty }.joined(separator:" · ")
+        return [identity.year.trimmingCharacters(in:.whitespacesAndNewlines),product.replacingOccurrences(of:" - ",with:" ")].filter { !$0.isEmpty }.joined(separator:" · ")
     }
 }
 
@@ -109,40 +110,6 @@ struct CardFlight: ViewModifier {
     let namespace: Namespace.ID?
     @ViewBuilder func body(content: Content) -> some View {
         if let namespace { content.matchedGeometryEffect(id:id,in:namespace) } else { content }
-    }
-}
-
-struct HolographicCard: View {
-    let front: Data?
-    let back: Data?
-    var rotationSpeed: Double = 43
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var began = Date()
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0/30,paused:reduceMotion)) { timeline in
-            let time = timeline.date.timeIntervalSince(began)
-            let angle = reduceMotion ? 0 : time * rotationSpeed
-            let frontVisible = cos(angle * .pi / 180) >= 0
-            ZStack {
-                face(front,time:time).opacity(frontVisible ? 1:0)
-                face(back,time:time).rotation3DEffect(.degrees(180),axis:(x:0,y:1,z:0)).opacity(frontVisible ? 0:1)
-            }
-            .rotation3DEffect(.degrees(angle),axis:(x:0,y:1,z:0),perspective:0.45)
-            .rotation3DEffect(.degrees(reduceMotion ? 0 : sin(time*0.65)*7),axis:(x:1,y:0,z:0))
-            .shadow(color:.cyan.opacity(0.15),radius:28,y:16)
-        }.accessibilityLabel("Front and back of your scanned card")
-    }
-    private func face(_ data: Data?, time: Double) -> some View {
-        GeometryReader { geometry in
-            let imageSize = data.flatMap { UIImage(data:$0)?.size } ?? CGSize(width:5,height:7)
-            let scale = min(geometry.size.width / imageSize.width,geometry.size.height / imageSize.height)
-            let faceSize = CGSize(width:imageSize.width * scale,height:imageSize.height * scale)
-            PhotoView(data:data).frame(width:faceSize.width,height:faceSize.height)
-                .background(.black).clipShape(RoundedRectangle(cornerRadius:16))
-                .colorEffect(ShaderLibrary.cardFoil(.float2(faceSize),.float(reduceMotion ? 0:Float(time))),isEnabled:!reduceMotion)
-                .overlay(RoundedRectangle(cornerRadius:16).stroke(.white.opacity(0.45),lineWidth:1))
-                .position(x:geometry.size.width/2,y:geometry.size.height/2)
-        }
     }
 }
 
@@ -277,18 +244,17 @@ struct ScanFlowView: View {
             .background(Color(red:0.025,green:0.075,blue:0.065).ignoresSafeArea())
     }
     private var revealScreen: some View {
+        GeometryReader { geometry in
+        ScrollView {
         VStack(spacing:24) {
             Spacer()
             if compact {
                 CardCollectionRow(card:model.card,namespace:namespace).padding(18).background(.white.opacity(0.09),in:RoundedRectangle(cornerRadius:22)).padding(.horizontal,20)
             } else {
                 HolographicCard(front:model.card.thumbnail ?? model.card.front,back:model.card.backCorrected ?? model.card.back)
-                    .frame(width:300,height:322).accessibilityIdentifier("scan.cardReveal").matchedGeometryEffect(id:"photo-"+model.id.uuidString,in:namespace)
-                VStack(spacing:8) {
-                    Text(model.player).font(.system(size:32,weight:.bold,design:.rounded)).multilineTextAlignment(.center)
-                    Text(model.team).font(.title3).foregroundStyle(.cyan)
-                    Text([model.card.identity.manufacturer,model.card.identity.year].filter { !$0.isEmpty }.joined(separator:" · ")).font(.caption).foregroundStyle(.white.opacity(0.5))
-                }.matchedGeometryEffect(id:"identity-"+model.id.uuidString,in:namespace)
+                    .frame(maxWidth:300).frame(height:322).accessibilityIdentifier("scan.cardReveal").matchedGeometryEffect(id:"photo-"+model.id.uuidString,in:namespace)
+                CardIdentityHeader(identity:model.card.identity,placeholder:model.player)
+                    .padding(.top,8).matchedGeometryEffect(id:"identity-"+model.id.uuidString,in:namespace)
                     .opacity(showIdentity ? 1:0).offset(y:showIdentity ? 0:24).scaleEffect(showIdentity ? 1:0.92).blur(radius:showIdentity ? 0:8)
                 VStack(spacing:10) {
                     if model.stage == .identifying { Text("Reading both sides").font(.subheadline).foregroundStyle(.white.opacity(0.6)).accessibilityIdentifier("scan.identifying") }
@@ -318,7 +284,9 @@ struct ScanFlowView: View {
             }
             if let error = model.saveError { Text(error).font(.caption); Button("Retry saving") { onCommit(model.card) }.buttonStyle(.borderedProminent); Button("Review save options",action:model.reviewSaveOptions) }
             Spacer()
-        }.padding(.horizontal,12)
+        }.padding(.horizontal,12).frame(maxWidth:.infinity,minHeight:geometry.size.height)
+        }.scrollIndicators(.hidden)
+        }
     }
     private func startCamera() {
         #if DEBUG

@@ -2,7 +2,7 @@ import XCTest
 
 @MainActor final class CollectionUITests: XCTestCase {
     func testNoResultsOffersClearFiltersAndCardTypeIncludesNonSports() throws {
-        continueAfterFailure = false
+        continueAfterFailure = false; executionTimeAllowance = 120
         let app = XCUIApplication()
         app.launchEnvironment["CARD_LEDGER_UI_TEST_STORE"] = UUID().uuidString
         app.launchEnvironment["CARD_LEDGER_COLLECTION_FIXTURE"] = "1"

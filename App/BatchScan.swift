@@ -52,6 +52,7 @@ struct BatchScanView: View {
     @State private var transition: Task<Void,Never>?
     @State private var review = false
     @State private var finishPartial = false
+    @State private var inspectingCard = false
     private var backPressure: Bool { coordinator.pendingCount(store) >= 20 || coordinator.error != nil }
     var body: some View {
         ZStack {
@@ -86,7 +87,7 @@ struct BatchScanView: View {
                     }
                     if stage == .reveal || stage == .failed {
                         VStack(spacing:16) {
-                            HolographicCard(front:pair.thumbnail ?? pair.front,back:pair.backCorrected ?? pair.back,rotationSpeed:180).frame(height:300)
+                            HolographicCard(front:pair.thumbnail ?? pair.front,back:pair.backCorrected ?? pair.back,rotationSpeed:180,onInteractionChanged:{ inspectingCard = $0 }).frame(height:300)
                                 .accessibilityIdentifier("batch.reveal")
                             Label(stage == .failed ? "Photos not yet saved" : "Both sides saved",systemImage:stage == .failed ? "exclamationmark.triangle":"checkmark.circle.fill")
                                 .foregroundStyle(stage == .failed ? .orange:.green)
@@ -189,6 +190,7 @@ struct BatchScanView: View {
             transition = Task {
                 do {
                     try await Task.sleep(for:.seconds(1.8)); try Task.checkCancellation()
+                    while inspectingCard { try await Task.sleep(for:.milliseconds(100)); try Task.checkCancellation() }
                     pair = Card(); stage = .front
                     if !backPressure { camera.armNextFront() }
                 } catch { }

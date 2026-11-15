@@ -14,7 +14,7 @@ import Security
             let file = URL.applicationSupportDirectory.appending(path:"CardLedgerUITests/"+testStore+"/collection.json")
             let fresh = !FileManager.default.fileExists(atPath:file.path)
             let store = CollectionStore(file:file)
-            if fresh && (ProcessInfo.processInfo.environment["CARD_LEDGER_DUPLICATE_FIXTURE"] == "1" || ProcessInfo.processInfo.environment["CARD_LEDGER_PRICING_FIXTURE"] == "1") {
+            if fresh && (ProcessInfo.processInfo.environment["CARD_LEDGER_DUPLICATE_FIXTURE"] == "1" || ProcessInfo.processInfo.environment["CARD_LEDGER_PRICING_FIXTURE"] == "1" || ProcessInfo.processInfo.environment["CARD_LEDGER_VIEWER_FIXTURE"] == "1") {
                 var card = Card(); card.identity = ScanFixture.identity
                 card.front = ScanFixture.image(label:"EXISTING FRONT"); card.back = ScanFixture.image(label:"EXISTING BACK")
                 card.notes = "Keep these notes"; card.location = "Binder A"

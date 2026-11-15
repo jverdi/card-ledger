@@ -1,4 +1,5 @@
 """Compile before simulator startup, then run all tests on an isolated CI device."""
+import argparse
 import json
 import subprocess
 import sys
@@ -8,6 +9,17 @@ def run(command, timeout):
     print('+ ' + ' '.join(command), flush=True)
     return subprocess.run(command, check=True, timeout=timeout)
 
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--suite', choices=['all', 'orientation', 'interaction'], default='all')
+suite = parser.parse_args().suite
+focused = {
+    'all': [],
+    'orientation': ['-only-testing:CardLedgerTests/OrientationTests'],
+    'interaction': ['-only-testing:CardLedgerTests/CardMotionTests',
+                    '-only-testing:CardLedgerUITests/CardInteractionUITests',
+                    '-only-testing:CardLedgerUITests/CollectionUITests/testNoResultsOffersClearFiltersAndCardTypeIncludesNonSports'],
+}[suite]
 
 project = ['-project', 'CardLedger.xcodeproj', '-scheme', 'CardLedger',
            '-derivedDataPath', 'build/TestDerived',
@@ -39,7 +51,7 @@ try:
          '-parallel-testing-enabled', 'NO', '-test-timeouts-enabled', 'YES',
          '-default-test-execution-time-allowance', '60',
          '-maximum-test-execution-time-allowance', '180',
-         '-resultBundlePath', 'TestResults.xcresult'], 1200)
+         '-resultBundlePath', 'TestResults.xcresult', *focused], 1200)
 except (subprocess.CalledProcessError, subprocess.TimeoutExpired, StopIteration, KeyError) as error:
     print('iOS verification failed: ' + str(error), flush=True)
     subprocess.run(['xcrun', 'simctl', 'list', 'devices', 'booted'], timeout=30)
@@ -48,3 +60,4 @@ finally:
     if device_id:
         subprocess.run(['xcrun', 'simctl', 'shutdown', device_id], timeout=30)
         subprocess.run(['xcrun', 'simctl', 'delete', device_id], timeout=30)
+

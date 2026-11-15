@@ -21,47 +21,14 @@ struct CardDetailView: View {
                 if let card {
                     GeometryReader { geometry in
                         ScrollView {
-                            VStack(spacing:24) {
+                            VStack(spacing:32) {
                                 Spacer(minLength:20)
                                 HolographicCard(front:card.thumbnail ?? card.front,back:card.backCorrected ?? card.back)
                                     .frame(width:min(300,max(1,geometry.size.width-48)),height:322)
                                     .accessibilityIdentifier("card.detail.reveal")
-                                VStack(spacing:8) {
-                                    Text(card.identity.player.isEmpty ? "Unidentified card" : card.identity.player)
-                                        .font(.system(size:32,weight:.bold,design:.rounded))
-                                        .accessibilityIdentifier("card.detail.player")
-                                    if !card.identity.team.isEmpty { Text(card.identity.team).font(.title3).foregroundStyle(.cyan) }
-                                    Text([card.identity.manufacturer,card.identity.year,card.identity.set].filter { !$0.isEmpty }.joined(separator:" · "))
-                                        .font(.subheadline).foregroundStyle(.white.opacity(0.65))
-                                }.multilineTextAlignment(.center)
-                                VStack(spacing:6) {
-                                    if let value = card.collectionValue {
-                                        Text(value,format:.currency(code:"USD")).font(.title2.bold())
-                                        Text(card.valueLabel).font(.caption).foregroundStyle(.white.opacity(0.6))
-                                    } else { Text("Not valued").font(.subheadline).foregroundStyle(.white.opacity(0.6)) }
-                                }
-                                if let note = card.scanNote, note != card.pricing?.summary {
-                                    Text(note).font(.footnote).foregroundStyle(.white.opacity(0.7))
-                                        .multilineTextAlignment(.center)
-                                }
-                                if let result = card.pricing {
-                                    CardPricingSummary(pricing:result).frame(maxWidth:.infinity,alignment:.leading)
-                                    if !result.candidates.isEmpty {
-                                        Button("Review price match") { reviewingPrice = true }.accessibilityIdentifier("pricing.review")
-                                    }
-                                }
-                                Button("Refresh price",systemImage:"arrow.clockwise",action:refreshPrice)
-                                    .disabled(pricing).accessibilityIdentifier("pricing.refresh")
-                                if pricing { ProgressView("Checking CardPricer…") }
-                                if let reference = card.priceCrossCheck,reference.identity.details == card.identity.details {
-                                    VStack(spacing:6) {
-                                        Text("130 Point reference · " + reference.value.formatted(.currency(code:"USD"))).font(.subheadline)
-                                        if let difference = reference.difference(from:card.pricing?.usableValue) { Text(difference).font(.caption).foregroundStyle(.orange) }
-                                        Text("Checked by you " + reference.checkedAt.formatted(date:.abbreviated,time:.omitted)).font(.caption).foregroundStyle(.secondary)
-                                        if let link = reference.sourceURL.flatMap(PriceCrossCheck.sourceURL) { Link("View reference",destination:link) }
-                                    }.accessibilityIdentifier("pricing.crossCheckSummary")
-                                }
-                                Button("Check 130 Point") { crossChecking = true }.accessibilityIdentifier("pricing.crossCheck")
+                                CardIdentityHeader(identity:card.identity,playerIdentifier:"card.detail.player")
+                                    .padding(.top,6)
+                                pricingPanel(card)
                                 Spacer(minLength:24)
                             }.padding(.horizontal,24).frame(maxWidth:.infinity,minHeight:geometry.size.height)
                         }
@@ -115,6 +82,46 @@ struct CardDetailView: View {
             .onDisappear { priceTask?.cancel() }
             .onChange(of:card == nil) { _,missing in if missing { dismiss() } }
         }.preferredColorScheme(.dark).tint(.white)
+    }
+    private func pricingPanel(_ card:Card) -> some View {
+        VStack(alignment:.leading,spacing:16) {
+            CardValueHeading(card:card)
+            if let result = card.pricing, result.usableValue == nil {
+                Text(result.summary).font(.footnote).foregroundStyle(.white.opacity(0.6))
+            } else if let note = card.scanNote {
+                Text(note).font(.footnote).foregroundStyle(.white.opacity(0.6))
+            }
+            if let result = card.pricing, !result.candidates.isEmpty {
+                Button("Review price match") { reviewingPrice = true }
+                    .font(.subheadline.weight(.medium)).accessibilityIdentifier("pricing.review")
+            }
+            ViewThatFits(in:.horizontal) {
+                HStack(spacing:14) { priceActions }
+                VStack(alignment:.leading,spacing:12) { priceActions }
+            }
+            if pricing { ProgressView("Checking CardPricer…").font(.caption) }
+            if let reference = card.priceCrossCheck,reference.identity.details == card.identity.details {
+                VStack(alignment:.leading,spacing:5) {
+                    Text("130 Point reference · " + reference.value.formatted(.currency(code:"USD"))).font(.subheadline)
+                    if let difference = reference.difference(from:card.pricing?.usableValue) { Text(difference).font(.caption).foregroundStyle(.orange) }
+                    Text("Checked by you " + reference.checkedAt.formatted(date:.abbreviated,time:.omitted)).font(.caption).foregroundStyle(.secondary)
+                    if let link = reference.sourceURL.flatMap(PriceCrossCheck.sourceURL) { Link("View reference",destination:link).font(.caption) }
+                }.accessibilityIdentifier("pricing.crossCheckSummary")
+            }
+            if let result = card.pricing {
+                DisclosureGroup("Price details") { CardPricingSummary(pricing:result).padding(.top,10) }
+                    .font(.caption).foregroundStyle(.white.opacity(0.65))
+            }
+        }.padding(18).frame(maxWidth:420,alignment:.leading)
+            .background(.white.opacity(0.055),in:RoundedRectangle(cornerRadius:20))
+            .overlay(RoundedRectangle(cornerRadius:20).strokeBorder(.white.opacity(0.06),lineWidth:0.5))
+    }
+    @ViewBuilder private var priceActions: some View {
+        Button("Refresh price",systemImage:"arrow.clockwise",action:refreshPrice)
+            .font(.subheadline.weight(.medium)).buttonStyle(.bordered).buttonBorderShape(.capsule)
+            .disabled(pricing).accessibilityIdentifier("pricing.refresh")
+        Button("Check 130 Point") { crossChecking = true }
+            .font(.subheadline).foregroundStyle(.cyan.opacity(0.85)).accessibilityIdentifier("pricing.crossCheck")
     }
     private func refreshPrice() {
         guard let snapshot = card, !pricing else { return }
