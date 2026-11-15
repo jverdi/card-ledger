@@ -78,3 +78,24 @@ Photo-library fallback follows the same front/back sequence and requires a compl
 - Search/filter and export CSV. Export a photo backup, restore on a clean install and compare both sides.
 - Refresh CardPricer pricing, review ambiguous matches, and save a manual 130 Point reference; verify stale/sparse evidence and failures. A missing or failed lookup must preserve saved data.
 - Inspect TestFlight build number and report device/OS and any crash or camera issue.
+
+
+### Hands-free batch scanning
+
+Use the stack-plus **Batch scan** button beside +. With the phone stationary, place
+one card under the camera, flip after the green front confirmation, then slide in
+the next card after “Both sides saved.” Each pair gets a brief holographic reveal;
+there is no Continue button in this mode. Keep the full physical outline visible.
+The camera observes flips/removal during animations and compares card appearance
+so a stationary side is not repeatedly captured. Briefly clear the guide if two
+faces look too similar to distinguish. The screen stays awake while scanning.
+
+Both originals and crops are saved before advancing. Identification and CardPricer
+run serially while scanning continues (up to 20 waiting pairs). Saved jobs resume
+when the app is open, including after relaunch. Price failures retain the card and
+photos for review. Duplicates stay outside collection totals in **Batch scans**
+until you choose Add duplicate, Overwrite existing, or Discard scan. Overwrite is
+an atomic replacement preserving owner notes, history and manual value. Done can
+leave completed pairs processing; an unfinished front requires discard confirmation.
+Single-card scanning still waits for Continue. Physical-device batch speed and
+appearance thresholds need validation with varied card designs and lighting.

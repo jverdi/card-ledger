@@ -38,6 +38,7 @@ struct ScanServices {
     @Published var captureError: String?
     @Published var saveError: String?
     @Published private(set) var importing = false
+    var onAnalysisComplete: ((Card) -> Void)?
     private var cancelled = false
     private var front: CapturedFace?
     private var back: CapturedFace?
@@ -52,6 +53,15 @@ struct ScanServices {
     var team: String { card.identity.team.isEmpty ? "Ready for your collection" : card.identity.team }
 
     init(services: ScanServices) { let card = Card(); self.card = card; id = card.id; self.services = services }
+    func resumeBatch(_ saved: Card) async {
+        guard let f = saved.front, let b = saved.back,
+              let fc = saved.frontCrop, let bc = saved.backCrop else { return }
+        card = saved
+        front = CapturedFace(original:f,crop:fc,preview:saved.thumbnail)
+        back = CapturedFace(original:b,crop:bc,preview:saved.backCorrected)
+        stage = .identifying
+        await analyze()
+    }
     func receive(_ face: CapturedFace) {
         guard !cancelled, scanning, face.crop.valid else { return }
         captureError = nil
@@ -139,6 +149,7 @@ struct ScanServices {
             try await pause(max(0,max(services.minimumReveal,services.revealDuration) - Date().timeIntervalSince(revealedAt)))
             try Task.checkCancellation()
             stage = .review
+            onAnalysisComplete?(card)
         } catch { }
     }
     func continueToCollection(replacing id: UUID? = nil) {
@@ -165,3 +176,4 @@ struct ScanServices {
 extension Identity {
     var canResearchAutomatically: Bool { [player,year,set,number].allSatisfy { !$0.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty } }
 }
+

@@ -67,6 +67,7 @@ struct Card: Codable, Identifiable {
     var backCorrected: Data?
     var frontCrop: CropSelection?
     var backCrop: CropSelection?
+    var batchState: String? // queued / duplicate; nil means part of the collection
     var scanNote: String?
     var frontOrientationUncertain: Bool?
     var backOrientationUncertain: Bool?
@@ -196,6 +197,17 @@ extension Card {
         else { next.insert(card, at: 0) }
         try commit(next)
     }
+    func resolveBatch(_ scanned: Card, replacing id: UUID? = nil) throws {
+        var next = cards.filter { $0.id != scanned.id }
+        var result = scanned; result.batchState = nil
+        if let id {
+            guard let existing = next.first(where: { $0.id == id }), CardDuplicates.exactMatch(scanned, existing) else { throw ScanSaveError.matchChanged }
+            result = CardDuplicates.replacing(existing, with: result)
+            next.removeAll { $0.id == id }
+        }
+        next.insert(result, at: 0)
+        try commit(next)
+    }
     func delete(_ id: UUID) throws { try commit(cards.filter { $0.id != id }) }
     func export() throws -> URL {
         let url = URL.temporaryDirectory.appending(path: "CardLedger-backup.json")
@@ -215,7 +227,7 @@ extension Card {
             let safe = ["=", "+", "-", "@"].contains(String(value.prefix(1))) ? "'" + value : value
             return "\"" + safe.replacingOccurrences(of: "\"", with: "\"\"") + "\""
         }
-        let rows = [["Player", "Team", "Sport", "Year", "Set", "Number", "Variant", "Grade", "Status", "Tags", "Location", "Notes", "Manual value USD", "Value source", "Acquisition cost USD", "Disposition proceeds USD"]] + cards.map {
+        let rows = [["Player", "Team", "Sport", "Year", "Set", "Number", "Variant", "Grade", "Status", "Tags", "Location", "Notes", "Manual value USD", "Value source", "Acquisition cost USD", "Disposition proceeds USD"]] + cards.filter { $0.batchState == nil }.map {
             [$0.identity.player, $0.identity.team, $0.identity.sport, $0.identity.year, $0.identity.set, $0.identity.number, $0.identity.variant, $0.identity.grade, $0.status, $0.tags, $0.location, $0.notes, $0.manualValue.map { NSDecimalNumber(decimal: $0).stringValue } ?? "", $0.manualValueSource ?? "", $0.acquisitionCost.map { NSDecimalNumber(decimal: $0).stringValue } ?? "", $0.dispositionProceeds.map { NSDecimalNumber(decimal: $0).stringValue } ?? ""]
         }
         let url = URL.temporaryDirectory.appending(path: "CardLedger.csv")
@@ -223,3 +235,4 @@ extension Card {
         return url
     }
 }
+

@@ -42,12 +42,16 @@ struct CollectionView: View {
     @State private var viewing: Card?
     @State private var settings = false
     @State private var scan: ScanFlowModel?
+    @StateObject private var batch = BatchScanCoordinator()
+    @State private var batchScanning = false
+    @State private var batchReview = false
+    @Environment(\.scenePhase) private var scenePhase
     @Namespace private var scanFlight
     @State private var inserted: UUID?
     @State private var filtersExpanded = false
     var visible: [Card] {
         store.cards.filter { card in
-            (status == "All" || card.status == status) && (sport == "All sports" || card.identity.sport == sport) &&
+            card.batchState == nil && (status == "All" || card.status == status) && (sport == "All sports" || card.identity.sport == sport) &&
             (year == "All years" || card.identity.year == year) &&
             (grading == "All grades" || (grading == "Raw" ? card.identity.grade.lowercased() == "raw" : card.identity.grade.lowercased() != "raw" && !card.identity.grade.isEmpty)) &&
             (tag.isEmpty || card.tags.localizedCaseInsensitiveContains(tag)) &&
@@ -70,6 +74,10 @@ struct CollectionView: View {
                     .transition(.opacity).zIndex(2)
             }
         }
+        .onAppear { batch.resume(store:store) }
+        .onChange(of:scenePhase) { _,phase in if phase == .active { batch.resume(store:store) } }
+        .fullScreenCover(isPresented:$batchScanning) { BatchScanView(coordinator:batch).environmentObject(store) }
+        .sheet(isPresented:$batchReview) { BatchReviewView(coordinator:batch).environmentObject(store) }
         .fullScreenCover(item:$viewing) { card in CardDetailView(cardID:card.id).environmentObject(store) }
     }
     private var collectionContent: some View {
@@ -77,12 +85,17 @@ struct CollectionView: View {
             ScrollViewReader { proxy in
             List {
                 Section {
-                    let owned = store.cards.filter { $0.status == "Owned" }
+                    let owned = store.cards.filter { $0.batchState == nil && $0.status == "Owned" }
                     let values = owned.compactMap { $0.collectionValue }
                     VStack(alignment: .leading, spacing: 6) {
                         Text(values.reduce(0, +), format: .currency(code: "USD")).font(.largeTitle.bold())
                         Text("\(values.count) of \(owned.count) owned cards valued · saved estimates").font(.caption).foregroundStyle(.secondary)
                     }.padding(.vertical, 8)
+                }
+                if store.cards.contains(where: { $0.batchState != nil }) || batch.error != nil {
+                    Button { batchReview = true } label: {
+                        Label("Batch scans · \(batch.pendingCount(store)) processing · \(batch.duplicateCount(store)) to review",systemImage:"tray.full")
+                    }.accessibilityIdentifier("batch.inbox")
                 }
                 Section {
                     Picker("Status", selection: $status) { ForEach(["Owned", "Sold", "Gifted", "All"], id: \.self) { Text($0) } }
@@ -105,6 +118,7 @@ struct CollectionView: View {
             }.navigationTitle("Card Ledger").searchable(text: $query, prompt: "Player, team, set, tag or location")
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) { Button("Settings", systemImage: "gearshape") { settings = true } }
+                    ToolbarItem(placement: .topBarTrailing) { Button("Batch scan",systemImage:"rectangle.stack.badge.plus") { batchScanning = true }.accessibilityIdentifier("collection.batch") }
                     ToolbarItem(placement: .topBarTrailing) { Button("Add card", systemImage: "plus", action:startScan).accessibilityIdentifier("collection.add") }
                 }
                 .onChange(of: inserted) { _,id in if let id { withAnimation(.spring(response:0.65,dampingFraction:0.88)) { proxy.scrollTo(id,anchor:.center) } } }
@@ -402,3 +416,4 @@ struct MoneyField: View {
         }
     }
 }
+

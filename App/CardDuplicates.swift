@@ -20,9 +20,22 @@ enum CardDuplicates {
         return teamA.isEmpty || teamB.isEmpty || teamA == teamB
     }
     static func matches(for scanned: Card,in collection: [Card]) -> [Card] {
-        collection.filter { $0.id != scanned.id && exactMatch(scanned,$0) }
+        collection.filter { $0.batchState == nil && $0.id != scanned.id && exactMatch(scanned,$0) }
             .sorted { $0.added == $1.added ? $0.id.uuidString < $1.id.uuidString : $0.added > $1.added }
     }
+    static func replacing(_ original: Card, with scanned: Card) -> Card {
+        var existing = original
+        existing.identity = scanned.identity
+        existing.front = scanned.front; existing.back = scanned.back
+        existing.thumbnail = scanned.thumbnail; existing.backCorrected = scanned.backCorrected
+        existing.frontCrop = scanned.frontCrop; existing.backCrop = scanned.backCrop
+        existing.frontOrientationUncertain = scanned.frontOrientationUncertain
+        existing.backOrientationUncertain = scanned.backOrientationUncertain
+        existing.ocr = scanned.ocr; existing.frontOCR = scanned.frontOCR; existing.backOCR = scanned.backOCR
+        existing.research = scanned.research; existing.pricing = scanned.pricing; existing.scanNote = scanned.scanNote
+        return existing
+    }
+
 }
 
 extension CollectionStore {
@@ -33,14 +46,7 @@ extension CollectionStore {
         guard var existing = cards.first(where:{ $0.id == id }), CardDuplicates.exactMatch(scanned,existing) else {
             throw ScanSaveError.matchChanged
         }
-        existing.identity = scanned.identity
-        existing.front = scanned.front; existing.back = scanned.back
-        existing.thumbnail = scanned.thumbnail; existing.backCorrected = scanned.backCorrected
-        existing.frontCrop = scanned.frontCrop; existing.backCrop = scanned.backCrop
-        existing.frontOrientationUncertain = scanned.frontOrientationUncertain
-        existing.backOrientationUncertain = scanned.backOrientationUncertain
-        existing.ocr = scanned.ocr; existing.frontOCR = scanned.frontOCR; existing.backOCR = scanned.backOCR
-        existing.research = scanned.research; existing.pricing = scanned.pricing; existing.scanNote = scanned.scanNote
+        existing = CardDuplicates.replacing(existing, with: scanned)
         try save(existing)
         return existing
     }
@@ -49,3 +55,4 @@ enum ScanSaveError: LocalizedError {
     case matchChanged
     var errorDescription: String? { "The existing card changed or was removed. Review the save options again." }
 }
+

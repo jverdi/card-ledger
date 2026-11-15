@@ -78,14 +78,31 @@ struct CaptureGate {
     private(set) var requiresDeparture = false
     private(set) var progress = 0.0
     private var missingSince: TimeInterval?
+    private var capturedAppearance: [UInt8]?
+    private var previousAppearance: [UInt8]?
+    private var changedSince: TimeInterval?
+    static func difference(_ a: [UInt8], _ b: [UInt8]) -> Double {
+        guard !a.isEmpty, a.count == b.count else { return 1 }
+        // Remove mean brightness so exposure adjustments do not count as flips.
+        let meanA = a.map(Double.init).reduce(0,+) / Double(a.count)
+        let meanB = b.map(Double.init).reduce(0,+) / Double(b.count)
+        return zip(a,b).reduce(0.0) { $0 + abs((Double($1.0)-meanA)-(Double($1.1)-meanB)) } / Double(a.count) / 255
+    }
     mutating func restartHold() { anchor = nil; since = nil; frames = 0; progress = 0 }
     mutating func reset(requireDeparture: Bool = false) {
         restartHold(); latched = false
-        requiresDeparture = requireDeparture; missingSince = nil
+        requiresDeparture = requireDeparture; missingSince = nil; changedSince = nil
+        previousAppearance = nil
+        if !requireDeparture { capturedAppearance = nil }
     }
-    mutating func observe(_ rectangle: CardRectangle?, at time: TimeInterval, focused: Bool = true, captureAllowed: Bool = true) -> Bool {
+    mutating func observe(_ rectangle: CardRectangle?, at time: TimeInterval, focused: Bool = true, captureAllowed: Bool = true, appearance: [UInt8]? = nil) -> Bool {
         let candidate = rectangle.flatMap { $0.likelyCard ? $0 : nil }
+        let unchanged = capturedAppearance.flatMap { old in appearance.map { Self.difference(old,$0) < 0.08 } } ?? false
         if requiresDeparture {
+            if let appearance, let capturedAppearance, Self.difference(appearance,capturedAppearance) >= 0.12 {
+                if changedSince == nil { changedSince = time }
+                if time - (changedSince ?? time) >= 0.15 { requiresDeparture = false }
+            } else { changedSince = nil }
             if candidate == nil {
                 if missingSince == nil { missingSince = time }
                 // A brief edge-on flip is enough. Keep observing during confirmation.
@@ -93,11 +110,13 @@ struct CaptureGate {
             } else { missingSince = nil }
             return false
         }
-        guard !latched, captureAllowed, let candidate, focused else { restartHold(); return false }
+        guard !latched, captureAllowed, !unchanged, let candidate, focused else { restartHold(); return false }
+        if let appearance, let previousAppearance, Self.difference(appearance,previousAppearance) > 0.06 { restartHold() }
+        previousAppearance = appearance
         if let anchor, candidate.movement(from: anchor) < 0.025 { frames += 1 }
         else { anchor = candidate; since = time; frames = 1 }
         progress = min(1,max(0,(time - (since ?? time))/0.8))
-        if frames >= 6 && progress >= 1 { latched = true; return true }
+        if frames >= 6 && progress >= 1 { latched = true; capturedAppearance = appearance; return true }
         return false
     }
 }
@@ -116,6 +135,7 @@ final class AutoScanCamera: NSObject, ObservableObject, AVCaptureVideoDataOutput
     @Published var waitingForFlip = false
     @Published var holdProgress = 0.0
     @Published var guidance = "Position the whole card inside the guide."
+    var continuous = false
     var onCapture: ((CapturedFace) -> Void)?
     private let queue = DispatchQueue(label: "CardLedger.camera", qos: .userInitiated)
     private let context = CIContext()
@@ -206,6 +226,13 @@ final class AutoScanCamera: NSObject, ObservableObject, AVCaptureVideoDataOutput
     func armBack() {
         queue.async { self.captureAllowed = true; self.enabled = true; self.gate.restartHold(); self.refocus(at:self.focusPoint) }
     }
+    // Keep observing departures during the brief batch reveal, then arm a fresh front.
+    func armNextFront() {
+        queue.async {
+            self.frontCaptured = false; self.captureAllowed = true; self.enabled = true
+            self.gate.restartHold()
+        }
+    }
     func suspend() {
         queue.async {
             self.generation += 1; self.wanted = false; self.enabled = false
@@ -231,6 +258,19 @@ final class AutoScanCamera: NSObject, ObservableObject, AVCaptureVideoDataOutput
         // Video frames are physically rotated 90 degrees; device focus coordinates are landscape.
         CGPoint(x:portraitPoint.y,y:1-portraitPoint.x)
     }
+    private func appearance(of image: CIImage, rectangle: CardRectangle?) -> [UInt8]? {
+        guard let points = rectangle?.points else { return nil }
+        let xs = points.map(\.x), ys = points.map(\.y)
+        let bounds = CGRect(x:xs.min()!*image.extent.width,y:(1-ys.max()!)*image.extent.height,
+                            width:(xs.max()!-xs.min()!)*image.extent.width,height:(ys.max()!-ys.min()!)*image.extent.height)
+        let cropped = image.cropped(to:bounds).transformed(by:CGAffineTransform(translationX:-bounds.minX,y:-bounds.minY))
+            .transformed(by:CGAffineTransform(scaleX:16/bounds.width,y:16/bounds.height))
+        var bytes = [UInt8](repeating:0,count:16*16*4)
+        bytes.withUnsafeMutableBytes { raw in
+            context.render(cropped,toBitmap:raw.baseAddress!,rowBytes:64,bounds:CGRect(x:0,y:0,width:16,height:16),format:.RGBA8,colorSpace:CGColorSpaceCreateDeviceRGB())
+        }
+        return stride(from:0,to:bytes.count,by:4).map { UInt8((Int(bytes[$0])+Int(bytes[$0+1])+Int(bytes[$0+2]))/3) }
+    }
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         let now = CACurrentMediaTime()
         guard enabled, now-lastFrame >= 0.10, let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
@@ -243,10 +283,10 @@ final class AutoScanCamera: NSObject, ObservableObject, AVCaptureVideoDataOutput
                 if hypot(point.x-focusPoint.x,point.y-focusPoint.y) > 0.08 && now-focusUpdatedAt > 0.8 { refocus(at:point) }
             }
             let focused = now-focusUpdatedAt > 0.35 && device?.isAdjustingFocus != true && device?.isAdjustingExposure != true
-            let captured = gate.observe(rectangle,at:now,focused:focused,captureAllowed:captureAllowed)
+            let captured = gate.observe(rectangle,at:now,focused:focused,captureAllowed:captureAllowed,appearance:appearance(of:CIImage(cvPixelBuffer:buffer),rectangle:rectangle))
             let waiting = gate.requiresDeparture, progress = gate.progress
             let hint: String
-            if waiting { hint = "Flip the card, or briefly move it out of view." }
+            if waiting { hint = frontCaptured ? "Flip the card, or briefly move it out of view." : "Slide in the next card. Briefly clear the guide between cards." }
             else if !focused { hint = "Focusing… If blurry, move the phone a little farther away." }
             else if rectangle == nil { hint = "Show all four edges. Try a contrasting background." }
             else { hint = "Card found. Hold steady…" }
@@ -260,6 +300,9 @@ final class AutoScanCamera: NSObject, ObservableObject, AVCaptureVideoDataOutput
                       let data = UIImage(cgImage: cg).jpegData(compressionQuality: 0.95) else { gate.reset(); return }
                 if !frontCaptured {
                     frontCaptured = true; captureAllowed = false
+                    gate.reset(requireDeparture:true)
+                } else if continuous {
+                    captureAllowed = false
                     gate.reset(requireDeparture:true)
                 } else { enabled = false }
                 let face = CapturedFace(original: data, crop: rectangle.crop, preview: try? Imaging.cropJPEG(cg, crop: rectangle.crop))
@@ -292,3 +335,4 @@ struct LiveCardPreview: UIViewRepresentable {
         if let connection = view.preview.connection, connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90 }
     }
 }
+
