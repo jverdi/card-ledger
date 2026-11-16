@@ -147,11 +147,16 @@ struct ScanFlowView: View {
         }.foregroundStyle(.white).preferredColorScheme(.dark)
             .onAppear { setupCamera() }
             .onDisappear { camera.onCapture = nil; camera.stop(); model.cancel() }
-            .onChange(of:model.stage) { _,stage in
+            .onChange(of:model.stage) { previousStage,stage in
                 if stage == .frontCaptured {
                     camera.prepareBack()
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
                     UIAccessibility.post(notification:.announcement,argument:"Front captured. Turn your card over.")
+                }
+                // Confirm the accepted back immediately, before recognition or pricing.
+                // Restrict this to capture so resuming/retrying processing never buzzes.
+                if previousStage == .back && stage == .identifying {
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
                 }
                 if stage == .back {
                     camera.armBack()
